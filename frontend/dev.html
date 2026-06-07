@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>s7ab-ai - dev</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Tahoma, Verdana, Geneva, sans-serif;
+      background: url('background.jpg') center/cover no-repeat fixed, linear-gradient(160deg, #a8e4f7 0%, #c9f0c8 50%, #7ecff5 100%);
+      color: #1a3a4a;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 14px 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(160,220,255,0.6) 50%, rgba(100,190,240,0.5) 100%);
+      backdrop-filter: blur(8px);
+      border-bottom: 2px solid rgba(255,255,255,0.8);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #1a5a7a;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.9);
+      box-shadow: 0 2px 8px rgba(100,200,255,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header a {
+      font-size: 0.7rem;
+      font-weight: 400;
+      color: #4a8aaa;
+      text-decoration: none;
+    }
+
+    .container {
+      max-width: 640px;
+      margin: 60px auto;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(220,245,255,0.8) 100%);
+      border: 1px solid rgba(255,255,255,0.9);
+      box-shadow: 0 2px 12px rgba(0,150,255,0.15), inset 0 1px 0 rgba(255,255,255,0.8);
+      padding: 24px 28px;
+    }
+
+    .card h2 {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #4a8aaa;
+      margin-bottom: 12px;
+    }
+
+    .card p {
+      font-size: 0.88rem;
+      line-height: 1.7;
+      color: #1a3a4a;
+    }
+
+    .model-tag {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 4px 12px;
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      color: white;
+      font-size: 0.78rem;
+      font-weight: 700;
+      box-shadow: 0 2px 6px rgba(0,100,200,0.3);
+      text-shadow: 0 1px 2px rgba(0,80,160,0.4);
+    }
+
+    .dev-card {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .dev-card img {
+      width: 72px;
+      height: 72px;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 2px 8px rgba(0,100,200,0.2);
+    }
+
+    .dev-card .info h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #1a5a7a;
+      margin-bottom: 4px;
+    }
+
+    .dev-card .info a {
+      font-size: 0.82rem;
+      color: #4a8aaa;
+      text-decoration: none;
+    }
+
+    .dev-card .info a:hover {
+      text-decoration: underline;
+    }
+
+    .dev-card .info p {
+      font-size: 0.82rem;
+      color: #3a6a8a;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span>s7ab-ai / dev</span>
+  <a href="index.html">terug</a>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>over s7ab-ai</h2>
+    <p>Appie moet uploads hebben miskien</p>
+  </div>
+
+  <div class="card">
+    <h2>AI model</h2>
+    <p>Open-AI goedkoop enz</p>
+    <div class="model-tag">GPT-4o mini</div>
+  </div>
+
+  <div class="card dev-card">
+    <img src="https://github.com/Zi3600.png" alt="Zi3600" />
+    <div class="info">
+      <h3>Zi3600</h3>
+      <a href="https://github.com/Zi3600" target="_blank">github.com/Zi3600</a>
+      <p>gebouwd en gefixt door Zi3600</p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
