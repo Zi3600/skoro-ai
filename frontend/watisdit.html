@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>wat is dit — skorro-ai</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Tahoma, Verdana, Geneva, sans-serif;
+      background: url('background.jpg') center/cover no-repeat fixed, linear-gradient(160deg, #a8e4f7 0%, #c9f0c8 50%, #7ecff5 100%);
+      color: #1a3a4a;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 14px 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(160,220,255,0.6) 50%, rgba(100,190,240,0.5) 100%);
+      backdrop-filter: blur(8px);
+      border-bottom: 2px solid rgba(255,255,255,0.8);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #1a5a7a;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.9);
+      box-shadow: 0 2px 8px rgba(100,200,255,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header a {
+      font-size: 0.7rem;
+      font-weight: 400;
+      color: #4a8aaa;
+      text-decoration: none;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 40px auto;
+      padding: 0 20px 60px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.88) 0%, rgba(220,245,255,0.82) 100%);
+      border: 1px solid rgba(255,255,255,0.9);
+      box-shadow: 0 2px 12px rgba(0,150,255,0.15), inset 0 1px 0 rgba(255,255,255,0.8);
+      padding: 22px 26px;
+    }
+
+    .card h2 {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #4a8aaa;
+      margin-bottom: 12px;
+    }
+
+    .card p {
+      font-size: 0.88rem;
+      line-height: 1.8;
+      color: #1a3a4a;
+    }
+
+    .highlight-number {
+      display: inline-block;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #1a5a7a;
+      background: linear-gradient(180deg, #b8edff 0%, #7dd6f7 100%);
+      border: 1px solid rgba(255,255,255,0.8);
+      padding: 2px 10px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      margin-top: 12px;
+    }
+
+    th {
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      color: white;
+      padding: 8px 12px;
+      text-align: left;
+      font-weight: 700;
+      text-shadow: 0 1px 2px rgba(0,80,160,0.4);
+      border: 1px solid rgba(255,255,255,0.4);
+    }
+
+    td {
+      padding: 8px 12px;
+      border: 1px solid rgba(100,180,240,0.25);
+      background: rgba(255,255,255,0.6);
+      color: #1a3a4a;
+      vertical-align: middle;
+    }
+
+    tr:nth-child(even) td { background: rgba(200,240,255,0.4); }
+
+    .winner td {
+      background: linear-gradient(180deg, rgba(180,255,200,0.6) 0%, rgba(140,240,180,0.5) 100%);
+      font-weight: 700;
+      color: #1a5a7a;
+    }
+
+    .tag {
+      display: inline-block;
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      color: white;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      text-shadow: 0 1px 2px rgba(0,80,160,0.4);
+      box-shadow: 0 2px 6px rgba(0,100,200,0.3);
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    .pay-card {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .pay-card img {
+      width: 64px;
+      height: 64px;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 2px 8px rgba(0,100,200,0.2);
+    }
+
+    .pay-card .info p { font-size: 0.88rem; line-height: 1.8; color: #1a3a4a; }
+    .pay-card .info a { color: #1a8fd4; text-decoration: none; font-weight: 700; }
+    .pay-card .info a:hover { text-decoration: underline; }
+
+    .back-btn {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 8px 20px;
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      border: 1px solid rgba(255,255,255,0.6);
+      color: white;
+      font-family: Tahoma, sans-serif;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 3px 8px rgba(0,100,200,0.3);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span>skorro-ai</span>
+  <a href="index.html">terug naar login</a>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>kifesh deze doekoe betalen ipv gewoon chat-gpt ofz?</h2>
+    <p>
+      Mohim kheb kunnen vinden dat het veeeeeel goedkoper is om zo'n API te betalen die per bericht een heeeel klein beetje geld gebruikt (dit heet <strong>tokens</strong>) ipv van een abonnement voor alleen maar huiswerk foto's enz te sturen.
+      <br><br>
+      Dus hoe dit werkt is gewoon dat jij eerste keer 5 euro overmaakt om een account aan te maken en dan krijg je gelijk 3yk veel tokens, fotos en berichten. Zo kan je per dag
+      <span class="highlight-number">500 foto's</span>
+      uploaden, zoveel mogelijk vragen stellen zoals je wil en dat blijft onder die budget van 5 euro.
+      <br><br>
+      Ik heb hier een lijstje op mn pc staan hoeveel je gebruikt en jij kan zelf zien hoeveel procent je van jouw budget gebruikt. Elke euro die je erop zet krijg je honderden foto uploads en uitleg tokens vrij.
+      <br><br>
+      Tokens is wat de AI gebruikt om jouw antwoord te geven enz drerrie.
+      <br><br>
+      Mohim wat dit allemaal betekent is dat jij makkelijk en zeer goedkoop de beste uitleg kunt krijgen zonder dat je een abonnement aanraakt waarvan je nog steeds een kleine limiet hebt.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>vergelijking met de markt</h2>
+    <table>
+      <tr>
+        <th>Service</th>
+        <th>Prijs/maand</th>
+        <th>Foto uploads</th>
+        <th>Limiet</th>
+      </tr>
+      <tr>
+        <td>ChatGPT Plus</td>
+        <td>€20</td>
+        <td>~40-50</td>
+        <td>hard dagelijks</td>
+      </tr>
+      <tr>
+        <td>Claude Pro</td>
+        <td>€20</td>
+        <td>~50</td>
+        <td>hard dagelijks</td>
+      </tr>
+      <tr>
+        <td>Gemini Advanced</td>
+        <td>€20</td>
+        <td>~60</td>
+        <td>hard dagelijks</td>
+      </tr>
+      <tr class="winner">
+        <td>skorro-ai <span class="tag">beste deal</span></td>
+        <td>€5 deposit</td>
+        <td>500+ per dag</td>
+        <td>alleen jouw budget</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>wollah en nog iets</h2>
+    <p>
+      Niet alleen dat, maar ik heb ook een <strong>chatroom</strong> gemaakt voor iedereen met een account zodat jullie elkaar kunnen sturen, vragen stellen of gewoon chatten enz.
+    </p>
+  </div>
+
+  <div class="card pay-card">
+    <img src="https://github.com/Zi3600.png" alt="Zi3600" />
+    <div class="info">
+      <p><strong>Payen kan je doen via Instagram</strong><br>
+      Stuur gewoon een berichtje en maak over:<br>
+      <a href="https://instagram.com/Zi3600" target="_blank">@Zi3600</a></p>
+    </div>
+  </div>
+
+  <a href="index.html" class="back-btn">terug naar login</a>
+
+</div>
+
+</body>
+</html>

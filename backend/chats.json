@@ -1,0 +1,128 @@
+{
+  "drerrie1": [
+    {
+      "id": 1,
+      "title": "weshh",
+      "messages": [
+        {
+          "role": "user",
+          "content": "weshh"
+        },
+        {
+          "role": "assistant",
+          "content": "iyeee daar Zi, alles goed?"
+        },
+        {
+          "role": "user",
+          "content": "jazekers a niffo, wat doen"
+        },
+        {
+          "role": "assistant",
+          "content": "Gaat wel, chillen beetje. En gij, wat doen?"
+        },
+        {
+          "role": "user",
+          "content": "vertel me een torry"
+        },
+        {
+          "role": "assistant",
+          "content": "Ewa, dus luister, er was een kerel, die wou indruk maken op een chick. Gaat hij naar de mall en koopt een dikke ketting, maar die was fake, wallah. \n\nDie chick ziet 'm en zegt: \"Nice bling, g!\" Hij denkt dat hij het goed gedaan heeft. Uiteindelijk komt ze erachter dat het nep is, broeder, en ze lacht hem gewoon uit. \n\nMoraal van het verhaal: wees gewoon jezelf, da is het. "
+        },
+        {
+          "role": "user",
+          "content": "leg me de basis van electrodynamica uit toch"
+        },
+        {
+          "role": "assistant",
+          "content": "Iyeee, dus electrodynamica gaat over elektriciteit en magnetisme, snappie? Het is hoe elektrische ladingen bewegen en interactie hebben met elkaar.\n\nGij hebt elektriciteit, dat zijn die deeltjes die bewegen en dan heb je magnetische velden. Als ge een stroom door een draad laat lopen, komt er een magnetisch veld rond die draad. Zo werkt het. \n\nEn die twee zijn connected, g, dat is basically wat je moet weten. Eenvoudig zat."
+        },
+        {
+          "role": "user",
+          "content": "mohim kheb hulp nodig met de basisformules"
+        },
+        {
+          "role": "assistant",
+          "content": "Aight, check het: \n\n1. **Wet van Coulomb**: F = k * (q1 * q2) / r², dat is voor die kracht tussen ladingen.\n2. **Ohm's Wet**: V = I * R, dat gaat over spanning, stroom en weerstand.\n3. **Magnetische kracht**: F = q * v * B * sin(θ), voor die lading die beweegt in een magnetisch veld.\n\nDat is de basis, g. Snap je het zo?"
+        },
+        {
+          "role": "user",
+          "content": "ah zoo idd"
+        },
+        {
+          "role": "assistant",
+          "content": "Ja, toch? Gewoon basics, niet te moeilijk. Heb je nog meer vragen, khoya?"
+        },
+        {
+          "role": "user",
+          "content": "kunt ge mijn huiswerk bekijken ff"
+        },
+        {
+          "role": "assistant",
+          "content": "Iyeee, ik kan niet je huiswerk bekijken, maar ik kan je wel helpen met vragen of dingen uitleggen, snap je? Wat heb je nodig?"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "wa is dit",
+      "messages": [
+        {
+          "role": "user",
+          "content": "wa is dit"
+        },
+        {
+          "role": "assistant",
+          "content": "Iyeee daar Zi! Dit is Dextro Energy. Dat is zo'n energyblokje voor snelle boost, als je even een opkikker nodig hebt, weet je? Perfect voor sport of als je moe bent. Gewoon een blokje nemen en je voelt je weer chill. Allez, snap je."
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "chat 3",
+      "messages": []
+    }
+  ],
+  "drerrie2": [
+    {
+      "id": 1,
+      "title": "yoo",
+      "messages": [
+        {
+          "role": "user",
+          "content": "yoo"
+        },
+        {
+          "role": "assistant",
+          "content": "iyeee daar drerrie 2, wat is er?"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "chat 2",
+      "messages": []
+    },
+    {
+      "id": 3,
+      "title": "chat 3",
+      "messages": []
+    }
+  ],
+  "drerrie3": [
+    {
+      "id": 1,
+      "title": "chat 1",
+      "messages": []
+    },
+    {
+      "id": 2,
+      "title": "chat 2",
+      "messages": []
+    },
+    {
+      "id": 3,
+      "title": "chat 3",
+      "messages": []
+    }
+  ]
+}

@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>skorro-ai / beheer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Tahoma, Verdana, Geneva, sans-serif;
+      background: url('background.jpg') center/cover no-repeat fixed, linear-gradient(160deg, #a8e4f7 0%, #c9f0c8 50%, #7ecff5 100%);
+      color: #1a3a4a;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 14px 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(160,220,255,0.6) 50%, rgba(100,190,240,0.5) 100%);
+      backdrop-filter: blur(8px);
+      border-bottom: 2px solid rgba(255,255,255,0.8);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #1a5a7a;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.9);
+      box-shadow: 0 2px 8px rgba(100,200,255,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header a { font-size: 0.7rem; font-weight: 400; color: #4a8aaa; text-decoration: none; }
+
+    .container { max-width: 720px; margin: 32px auto; padding: 0 24px; display: flex; flex-direction: column; gap: 20px; }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.88) 0%, rgba(220,245,255,0.82) 100%);
+      border: 1px solid rgba(255,255,255,0.9);
+      box-shadow: 0 2px 12px rgba(0,150,255,0.12), inset 0 1px 0 rgba(255,255,255,0.8);
+      padding: 20px 24px;
+    }
+
+    .card h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: #4a8aaa; margin-bottom: 16px; }
+
+    .user-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(100,180,240,0.15);
+    }
+
+    .user-row:last-child { border-bottom: none; }
+
+    .user-pfp {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(180deg, rgba(180,225,255,0.9) 0%, rgba(90,170,230,0.85) 100%);
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 2px 6px rgba(0,100,200,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .user-pfp img { width: 44px; height: 44px; object-fit: cover; }
+
+    .user-info { flex: 1; }
+    .user-info strong { font-size: 0.88rem; color: #1a5a7a; display: block; }
+    .user-info span { font-size: 0.72rem; color: #5a8aaa; }
+
+    .user-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+
+    .row-input {
+      padding: 6px 10px;
+      border: 1px solid rgba(100,180,240,0.6);
+      background: rgba(255,255,255,0.9);
+      font-family: Tahoma, sans-serif;
+      font-size: 0.78rem;
+      color: #1a3a4a;
+      width: 140px;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border: 1px solid rgba(255,255,255,0.6);
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      color: white;
+      font-family: Tahoma, sans-serif;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-shadow: 0 1px 2px rgba(0,80,160,0.4);
+      box-shadow: 0 2px 6px rgba(0,100,200,0.25);
+    }
+
+    .btn:hover { background: linear-gradient(180deg, #9de4ff 0%, #55c0f5 40%, #2a9fe0 100%); }
+
+    .btn-red {
+      background: linear-gradient(180deg, #ff8080 0%, #e84040 100%);
+      border-color: rgba(255,255,255,0.4);
+    }
+
+    .btn-red:hover { background: linear-gradient(180deg, #ff9090 0%, #f05050 100%); }
+
+    .btn-small { padding: 4px 10px; font-size: 0.7rem; }
+
+    .pfp-label {
+      font-size: 0.7rem;
+      color: #3a8aaa;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .new-user-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+    .new-user-form input { width: 160px; }
+    .new-user-form label { font-size: 0.72rem; color: #4a8aaa; display: block; margin-bottom: 3px; }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(30,120,200,0.9);
+      color: white;
+      padding: 10px 18px;
+      font-size: 0.82rem;
+      font-family: Tahoma, sans-serif;
+      box-shadow: 0 2px 12px rgba(0,100,200,0.3);
+      display: none;
+    }
+
+    .spend-bar-wrap { width: 80px; height: 5px; background: rgba(0,0,0,0.08); border: 1px solid rgba(255,255,255,0.6); }
+    .spend-bar { height: 100%; background: #4cca6e; transition: width 0.4s, background 0.4s; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span>skorro-ai / beheer</span>
+  <a href="index.html">terug</a>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <h2>gebruikers</h2>
+    <div id="user-list">laden...</div>
+  </div>
+
+  <div class="card">
+    <h2>nieuwe drerrie aanmaken</h2>
+    <div class="new-user-form">
+      <div>
+        <label>username</label>
+        <input class="row-input" id="new-username" placeholder="drerrie6" style="width:160px;" />
+      </div>
+      <div>
+        <label>wachtwoord</label>
+        <input class="row-input" id="new-password" placeholder="pass6" style="width:160px;" />
+      </div>
+      <div>
+        <label>naam</label>
+        <input class="row-input" id="new-displayname" placeholder="drerrie 6" style="width:160px;" />
+      </div>
+      <div>
+        <label>pfp</label>
+        <input type="file" id="new-pfp-file" accept="image/*" style="display:none;" />
+        <span class="pfp-label" onclick="document.getElementById('new-pfp-file').click()">foto kiezen</span>
+        <span id="new-pfp-name" style="font-size:0.68rem; color:#5a8aaa; margin-left:6px;"></span>
+      </div>
+      <button class="btn" onclick="createUser()">aanmaken</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  const BACKEND = "http://localhost:3000";
+  const token = sessionStorage.getItem("token");
+
+  if (!token) window.location.href = "index.html";
+
+  document.getElementById("new-pfp-file").addEventListener("change", (e) => {
+    document.getElementById("new-pfp-name").textContent = e.target.files[0]?.name || "";
+  });
+
+  function toast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.style.display = "block";
+    setTimeout(() => t.style.display = "none", 2500);
+  }
+
+  async function loadUsers() {
+    const res = await fetch(`${BACKEND}/admin/users`, { headers: { "x-auth-token": token } });
+    if (res.status === 403) { window.location.href = "index.html"; return; }
+    const data = await res.json();
+    renderUsers(data.users);
+  }
+
+  function renderUsers(users) {
+    const list = document.getElementById("user-list");
+    list.innerHTML = "";
+    users.forEach(u => {
+      const pct = Math.min((u.spend / 2) * 100, 100);
+      const barColor = pct < 50 ? "#4cca6e" : pct < 80 ? "#f5c842" : "#e84040";
+
+      list.innerHTML += `
+        <div class="user-row" id="row-${u.username}">
+          <div class="user-pfp" id="pfp-${u.username}">
+            ${u.pfp
+              ? `<img src="${BACKEND}${u.pfp}" />`
+              : `<svg width="24" height="24" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="8" r="4" fill="rgba(255,255,255,0.85)"/><path d="M2 20c0-5 4-8 9-8s9 3 9 8" stroke="rgba(255,255,255,0.85)" stroke-width="2" fill="none" stroke-linecap="round"/></svg>`}
+          </div>
+          <div class="user-info">
+            <strong>${u.displayName}</strong>
+            <span>${u.username}</span>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+              <div class="spend-bar-wrap"><div class="spend-bar" style="width:${pct}%;background:${barColor};"></div></div>
+              <span style="font-size:0.65rem;color:#5a8aaa;">€${u.spend.toFixed(3)}</span>
+              <button class="btn btn-small" onclick="resetSpend('${u.username}')">reset credits</button>
+            </div>
+          </div>
+          <div class="user-actions">
+            <div style="display:flex;gap:6px;">
+              <input class="row-input" id="pass-${u.username}" placeholder="nieuw wachtwoord" />
+              <button class="btn btn-small" onclick="changePass('${u.username}')">opslaan</button>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input class="row-input" id="name-${u.username}" placeholder="naam" value="${u.displayName}" />
+              <button class="btn btn-small" onclick="changeName('${u.username}')">opslaan</button>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="file" id="pfpfile-${u.username}" accept="image/*" style="display:none;" onchange="uploadPfp('${u.username}')" />
+              <span class="pfp-label" onclick="document.getElementById('pfpfile-${u.username}').click()">pfp veranderen</span>
+              ${u.username !== "drerrie1" ? `<button class="btn btn-small btn-red" onclick="deleteUser('${u.username}')">verwijder</button>` : ""}
+            </div>
+          </div>
+        </div>`;
+    });
+  }
+
+  async function changePass(username) {
+    const pass = document.getElementById(`pass-${username}`).value.trim();
+    if (!pass) return;
+    await fetch(`${BACKEND}/admin/users/${username}/password`, {
+      method: "POST", headers: { "x-auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pass }),
+    });
+    toast(`wachtwoord van ${username} veranderd`);
+    document.getElementById(`pass-${username}`).value = "";
+  }
+
+  async function changeName(username) {
+    const name = document.getElementById(`name-${username}`).value.trim();
+    if (!name) return;
+    await fetch(`${BACKEND}/admin/users/${username}/name`, {
+      method: "POST", headers: { "x-auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    toast(`naam van ${username} veranderd`);
+  }
+
+  async function uploadPfp(username) {
+    const file = document.getElementById(`pfpfile-${username}`).files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("pfp", file);
+    const res = await fetch(`${BACKEND}/admin/users/${username}/pfp`, {
+      method: "POST", headers: { "x-auth-token": token }, body: form,
+    });
+    const data = await res.json();
+    const pfpEl = document.getElementById(`pfp-${username}`);
+    pfpEl.innerHTML = `<img src="${BACKEND}${data.pfp}?t=${Date.now()}" />`;
+    toast(`pfp van ${username} bijgewerkt`);
+  }
+
+  async function resetSpend(username) {
+    await fetch(`${BACKEND}/admin/users/${username}/reset-spend`, {
+      method: "POST", headers: { "x-auth-token": token },
+    });
+    toast(`credits van ${username} gereset`);
+    loadUsers();
+  }
+
+  async function deleteUser(username) {
+    if (!confirm(`${username} verwijderen g?`)) return;
+    await fetch(`${BACKEND}/admin/users/${username}`, {
+      method: "DELETE", headers: { "x-auth-token": token },
+    });
+    toast(`${username} verwijderd`);
+    loadUsers();
+  }
+
+  async function createUser() {
+    const username = document.getElementById("new-username").value.trim();
+    const password = document.getElementById("new-password").value.trim();
+    const displayName = document.getElementById("new-displayname").value.trim();
+    const pfpFile = document.getElementById("new-pfp-file").files[0];
+    if (!username || !password) return toast("username en wachtwoord verplicht g");
+
+    const res = await fetch(`${BACKEND}/admin/users`, {
+      method: "POST", headers: { "x-auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, displayName }),
+    });
+    const data = await res.json();
+    if (!data.success) return toast(data.error);
+
+    if (pfpFile) {
+      const form = new FormData();
+      form.append("pfp", pfpFile);
+      await fetch(`${BACKEND}/admin/users/${username}/pfp`, {
+        method: "POST", headers: { "x-auth-token": token }, body: form,
+      });
+    }
+
+    toast(`${username} aangemaakt`);
+    document.getElementById("new-username").value = "";
+    document.getElementById("new-password").value = "";
+    document.getElementById("new-displayname").value = "";
+    document.getElementById("new-pfp-file").value = "";
+    document.getElementById("new-pfp-name").textContent = "";
+    loadUsers();
+  }
+
+  loadUsers();
+</script>
+
+</body>
+</html>
