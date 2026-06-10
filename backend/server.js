@@ -366,4 +366,5 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(3000, "127.0.0.1", () => console.log("skorro-ai running on port 3000"));
+const HOST = process.env.RENDER ? "0.0.0.0" : "127.0.0.1";
+server.listen(3000, HOST, () => console.log(`skorro-ai running on port 3000 (${HOST})`));
