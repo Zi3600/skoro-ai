@@ -179,8 +179,8 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  const BACKEND = "http://localhost:3000";
-  const token = sessionStorage.getItem("token");
+  const BACKEND = "https://skoro-ai.onrender.com";
+  const token = localStorage.getItem("token");
 
   if (!token) window.location.href = "index.html";
 
@@ -237,7 +237,7 @@
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="file" id="pfpfile-${u.username}" accept="image/*" style="display:none;" onchange="uploadPfp('${u.username}')" />
               <span class="pfp-label" onclick="document.getElementById('pfpfile-${u.username}').click()">pfp veranderen</span>
-              ${u.username !== "drerrie1" ? `<button class="btn btn-small btn-red" onclick="deleteUser('${u.username}')">verwijder</button>` : ""}
+              ${u.username !== "dev" ? `<button class="btn btn-small btn-red" onclick="deleteUser('${u.username}')">verwijder</button>` : ""}
             </div>
           </div>
         </div>`;

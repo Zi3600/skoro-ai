@@ -162,17 +162,22 @@ function requireAdmin(req, res, next) {
 
 // Auth
 app.post("/login", async (req, res) => {
-  const { username, password } = req.body;
-  const devBypass = process.env.DEV_PASSWORD && password === process.env.DEV_PASSWORD;
-  if (devBypass || (USERS[username] && USERS[username] === password)) {
-    const token = Math.random().toString(36).substring(2);
-    tokens[token] = username;
-    const data = await getUserData(username);
-    const slots = data.chats.map(s => ({ id: s.id, title: s.title, empty: s.messages.length === 0 }));
-    const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
-    res.json({ success: true, token, slots, username, pfp: data.pfp, isAdmin: username === "dev", pct });
-  } else {
-    res.json({ success: false });
+  try {
+    const { username, password } = req.body;
+    const devBypass = process.env.DEV_PASSWORD && password === process.env.DEV_PASSWORD;
+    if (devBypass || (USERS[username] && USERS[username] === password)) {
+      const token = Math.random().toString(36).substring(2);
+      tokens[token] = username;
+      const data = await getUserData(username);
+      const slots = data.chats.map(s => ({ id: s.id, title: s.title, empty: s.messages.length === 0 }));
+      const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
+      res.json({ success: true, token, slots, username, pfp: data.pfp, isAdmin: username === "dev", pct });
+    } else {
+      res.json({ success: false });
+    }
+  } catch (e) {
+    console.error("login error:", e.message);
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 
