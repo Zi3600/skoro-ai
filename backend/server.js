@@ -6,8 +6,31 @@ const OpenAI = require("openai");
 const fs = require("fs");
 const http = require("http");
 const { Server } = require("socket.io");
+const mongoose = require("mongoose");
+const path = require("path");
 
 dotenv.config();
+
+mongoose.connect(process.env.MONGODB_URI).then(() => console.log("MongoDB connected")).catch(e => console.error("MongoDB error:", e));
+
+// Schemas
+const UserDataSchema = new mongoose.Schema({
+  username: { type: String, unique: true },
+  spend: { type: Number, default: 0 },
+  chats: { type: Array, default: [] },
+  pfp: { type: String, default: null },
+});
+
+const RoomSchema = new mongoose.Schema({
+  id: String,
+  username: String,
+  displayName: String,
+  text: String,
+  time: Number,
+});
+
+const UserData = mongoose.model("UserData", UserDataSchema);
+const RoomMessage = mongoose.model("RoomMessage", RoomSchema);
 
 const app = express();
 const server = http.createServer(app);
@@ -20,7 +43,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.use(cors());
 app.use(express.json());
 app.use("/pfps", express.static("pfps"));
-app.use(express.static(require("path").join(__dirname, "../frontend")));
+app.use(express.static(path.join(__dirname, "../frontend")));
+
+if (!fs.existsSync("pfps")) fs.mkdirSync("pfps");
 
 const USERS = {
   dev: "proteine1234",
@@ -40,31 +65,22 @@ const NAMES = {
 
 const tokens = {};
 const MAX_EURO = 2.0;
-const SPEND_FILE = "spend.json";
-const CHATS_FILE = "chats.json";
-const ROOM_FILE = "room.json";
-const PFPS_FILE = "pfps.json";
 
-if (!fs.existsSync("pfps")) fs.mkdirSync("pfps");
-
-function loadJSON(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file)); } catch { return fallback !== undefined ? fallback : {}; }
-}
-function saveJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-const userSpend = loadJSON(SPEND_FILE);
-const userChats = loadJSON(CHATS_FILE);
-let roomMessages = loadJSON(ROOM_FILE, []);
-const userPfps = loadJSON(PFPS_FILE);
-
-function requireAdmin(req, res, next) {
-  const token = req.headers["x-auth-token"];
-  if (!token || !tokens[token]) return res.status(401).json({ error: "nie geautoriseerd" });
-  if (tokens[token] !== "dev") return res.status(403).json({ error: "alleen voor Zi g" });
-  req.username = tokens[token];
-  next();
+async function getUserData(username) {
+  let data = await UserData.findOne({ username });
+  if (!data) {
+    data = await UserData.create({
+      username,
+      spend: 0,
+      chats: [
+        { id: 1, title: "chat 1", messages: [] },
+        { id: 2, title: "chat 2", messages: [] },
+        { id: 3, title: "chat 3", messages: [] },
+      ],
+      pfp: null,
+    });
+  }
+  return data;
 }
 
 function calcCostEuro(usage) {
@@ -75,11 +91,6 @@ function calcCostEuro(usage) {
 
 function newPassword() {
   return Math.random().toString(36).substring(2, 8);
-}
-
-function savePasswords() {
-  const lines = Object.entries(USERS).map(([u, p]) => `${u}: ${p}`).join("\n");
-  fs.writeFileSync("passwords.txt", lines);
 }
 
 function buildSystemPrompt(name) {
@@ -141,69 +152,69 @@ function requireAuth(req, res, next) {
   next();
 }
 
-function getSlots(username) {
-  if (!userChats[username]) {
-    userChats[username] = [
-      { id: 1, title: "chat 1", messages: [] },
-      { id: 2, title: "chat 2", messages: [] },
-      { id: 3, title: "chat 3", messages: [] },
-    ];
-    saveJSON(CHATS_FILE, userChats);
-  }
-  return userChats[username];
+function requireAdmin(req, res, next) {
+  const token = req.headers["x-auth-token"];
+  if (!token || !tokens[token]) return res.status(401).json({ error: "nie geautoriseerd" });
+  if (tokens[token] !== "dev") return res.status(403).json({ error: "alleen voor Zi g" });
+  req.username = tokens[token];
+  next();
 }
 
 // Auth
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   const devBypass = process.env.DEV_PASSWORD && password === process.env.DEV_PASSWORD;
   if (devBypass || (USERS[username] && USERS[username] === password)) {
     const token = Math.random().toString(36).substring(2);
     tokens[token] = username;
-    const slots = getSlots(username).map(s => ({ id: s.id, title: s.title, empty: s.messages.length === 0 }));
-    res.json({ success: true, token, slots, username, pfp: userPfps[username] || null, isAdmin: username === "dev" });
+    const data = await getUserData(username);
+    const slots = data.chats.map(s => ({ id: s.id, title: s.title, empty: s.messages.length === 0 }));
+    const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
+    res.json({ success: true, token, slots, username, pfp: data.pfp, isAdmin: username === "dev", pct });
   } else {
     res.json({ success: false });
   }
 });
 
 // Get slots
-app.get("/slots", requireAuth, (req, res) => {
-  const slots = getSlots(req.username).map(s => ({ id: s.id, title: s.title, empty: s.messages.length === 0 }));
+app.get("/slots", requireAuth, async (req, res) => {
+  const data = await getUserData(req.username);
+  const slots = data.chats.map(s => ({ id: s.id, title: s.title, empty: s.messages.length === 0 }));
   res.json({ slots });
 });
 
 // Get messages for a slot
-app.get("/slots/:id", requireAuth, (req, res) => {
+app.get("/slots/:id", requireAuth, async (req, res) => {
   const slotId = parseInt(req.params.id);
-  const slots = getSlots(req.username);
-  const slot = slots.find(s => s.id === slotId);
+  const data = await getUserData(req.username);
+  const slot = data.chats.find(s => s.id === slotId);
   if (!slot) return res.status(404).json({ error: "slot nie gevonden" });
   res.json({ messages: slot.messages });
 });
 
 // Clear a slot
-app.post("/slots/:id/clear", requireAuth, (req, res) => {
+app.post("/slots/:id/clear", requireAuth, async (req, res) => {
   const slotId = parseInt(req.params.id);
-  const slots = getSlots(req.username);
-  const slot = slots.find(s => s.id === slotId);
+  const data = await getUserData(req.username);
+  const slot = data.chats.find(s => s.id === slotId);
   if (!slot) return res.status(404).json({ error: "slot nie gevonden" });
   slot.messages = [];
   slot.title = `chat ${slotId}`;
-  saveJSON(CHATS_FILE, userChats);
+  data.markModified("chats");
+  await data.save();
   res.json({ success: true });
 });
 
 // Get room messages
-app.get("/room", requireAuth, (req, res) => {
-  res.json({ messages: roomMessages });
+app.get("/room", requireAuth, async (req, res) => {
+  const msgs = await RoomMessage.find().sort({ time: 1 }).limit(20);
+  res.json({ messages: msgs });
 });
 
 // Delete room message (dev only)
-app.delete("/room/:msgId", requireAuth, (req, res) => {
+app.delete("/room/:msgId", requireAuth, async (req, res) => {
   if (req.username !== "dev") return res.status(403).json({ error: "nie voor u g" });
-  roomMessages = roomMessages.filter(m => m.id !== req.params.msgId);
-  saveJSON(ROOM_FILE, roomMessages);
+  await RoomMessage.deleteOne({ id: req.params.msgId });
   io.emit("room:delete", req.params.msgId);
   res.json({ success: true });
 });
@@ -214,18 +225,16 @@ app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
   const username = req.username;
   const name = NAMES[username] || username;
 
-  if (!userSpend[username]) userSpend[username] = 0;
+  const data = await getUserData(username);
 
-  if (userSpend[username] >= MAX_EURO) {
+  if (data.spend >= MAX_EURO) {
     const newPass = newPassword();
     USERS[username] = newPass;
-    savePasswords();
     delete tokens[req.authToken];
     return res.json({ reply: "ge zit op uw limiet broeder, vraag een nieuw wachtwoord aan Zi3600", locked: true });
   }
 
-  const slots = getSlots(username);
-  const slot = slots.find(s => s.id === parseInt(slotId));
+  const slot = data.chats.find(s => s.id === parseInt(slotId));
   if (!slot) return res.status(404).json({ error: "slot nie gevonden" });
 
   const history = [{ role: "system", content: buildSystemPrompt(name) }];
@@ -271,25 +280,23 @@ app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
     slot.title = storedContent.substring(0, 28) + (storedContent.length > 28 ? "..." : "");
   }
 
-  saveJSON(CHATS_FILE, userChats);
+  data.markModified("chats");
 
   const cost = calcCostEuro(completion.usage);
-  userSpend[username] += cost;
-  saveJSON(SPEND_FILE, userSpend);
+  data.spend += cost;
+  await data.save();
 
-  const pct = Math.min((userSpend[username] / MAX_EURO) * 100, 100);
-  console.log(`[${username}] slot ${slotId} | spent: €${userSpend[username].toFixed(4)}`);
+  const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
+  console.log(`[${username}] slot ${slotId} | spent: €${data.spend.toFixed(4)}`);
 
   res.json({ reply, pct });
 });
 
 // Admin — list users
-app.get("/admin/users", requireAdmin, (req, res) => {
-  const list = Object.keys(USERS).map(u => ({
-    username: u,
-    displayName: NAMES[u] || u,
-    pfp: userPfps[u] || null,
-    spend: userSpend[u] || 0,
+app.get("/admin/users", requireAdmin, async (req, res) => {
+  const list = await Promise.all(Object.keys(USERS).map(async u => {
+    const data = await getUserData(u);
+    return { username: u, displayName: NAMES[u] || u, pfp: data.pfp, spend: data.spend };
   }));
   res.json({ users: list });
 });
@@ -300,7 +307,6 @@ app.post("/admin/users/:username/password", requireAdmin, (req, res) => {
   const { password } = req.body;
   if (!USERS[username]) return res.status(404).json({ error: "user nie gevonden" });
   USERS[username] = password;
-  savePasswords();
   res.json({ success: true });
 });
 
@@ -314,27 +320,28 @@ app.post("/admin/users/:username/name", requireAdmin, (req, res) => {
 });
 
 // Admin — upload pfp
-app.post("/admin/users/:username/pfp", requireAdmin, uploadPfp.single("pfp"), (req, res) => {
+app.post("/admin/users/:username/pfp", requireAdmin, uploadPfp.single("pfp"), async (req, res) => {
   const { username } = req.params;
   if (!USERS[username]) return res.status(404).json({ error: "user nie gevonden" });
   if (!req.file) return res.status(400).json({ error: "geen foto" });
   const ext = req.file.originalname.split(".").pop();
   const filename = `${username}.${ext}`;
   const dest = `pfps/${filename}`;
-  if (userPfps[username]) {
-    try { fs.unlinkSync(userPfps[username].replace("/pfps/", "pfps/")); } catch {}
+  const data = await getUserData(username);
+  if (data.pfp) {
+    try { fs.unlinkSync(data.pfp.replace("/pfps/", "pfps/")); } catch {}
   }
   fs.renameSync(req.file.path, dest);
-  userPfps[username] = `/pfps/${filename}`;
-  saveJSON(PFPS_FILE, userPfps);
-  res.json({ success: true, pfp: userPfps[username] });
+  data.pfp = `/pfps/${filename}`;
+  await data.save();
+  res.json({ success: true, pfp: data.pfp });
 });
 
 // Admin — reset spend
-app.post("/admin/users/:username/reset-spend", requireAdmin, (req, res) => {
-  const { username } = req.params;
-  userSpend[username] = 0;
-  saveJSON(SPEND_FILE, userSpend);
+app.post("/admin/users/:username/reset-spend", requireAdmin, async (req, res) => {
+  const data = await getUserData(req.params.username);
+  data.spend = 0;
+  await data.save();
   res.json({ success: true });
 });
 
@@ -345,30 +352,25 @@ app.post("/admin/users", requireAdmin, (req, res) => {
   if (USERS[username]) return res.status(400).json({ error: "bestaat al g" });
   USERS[username] = password;
   NAMES[username] = displayName || username;
-  savePasswords();
   res.json({ success: true });
 });
 
 // Admin — delete user
-app.delete("/admin/users/:username", requireAdmin, (req, res) => {
+app.delete("/admin/users/:username", requireAdmin, async (req, res) => {
   const { username } = req.params;
   if (username === "dev") return res.status(400).json({ error: "ge kunt uzelf nie verwijderen g" });
   if (!USERS[username]) return res.status(404).json({ error: "user nie gevonden" });
   delete USERS[username];
   delete NAMES[username];
-  delete userSpend[username];
-  delete userChats[username];
-  delete userPfps[username];
-  saveJSON(SPEND_FILE, userSpend);
-  saveJSON(CHATS_FILE, userChats);
-  saveJSON(PFPS_FILE, userPfps);
-  savePasswords();
+  await UserData.deleteOne({ username });
   res.json({ success: true });
 });
 
-// Get own pfp
-app.get("/me/pfp", requireAuth, (req, res) => {
-  res.json({ pfp: userPfps[req.username] || null });
+// Get own pfp + current spend %
+app.get("/me/pfp", requireAuth, async (req, res) => {
+  const data = await getUserData(req.username);
+  const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
+  res.json({ pfp: data.pfp || null, pct });
 });
 
 // Socket.io — chatroom
@@ -381,21 +383,24 @@ io.use((socket, next) => {
 });
 
 io.on("connection", (socket) => {
-  socket.on("room:message", (text) => {
+  socket.on("room:message", async (text) => {
     if (!text || !text.trim()) return;
-    const msg = {
+    const count = await RoomMessage.countDocuments();
+    if (count >= 20) {
+      const oldest = await RoomMessage.findOne().sort({ time: 1 });
+      if (oldest) {
+        io.emit("room:delete", oldest.id);
+        await oldest.deleteOne();
+      }
+    }
+    const msg = new RoomMessage({
       id: Math.random().toString(36).substring(2),
       username: socket.username,
       displayName: socket.displayName,
       text: text.trim(),
       time: Date.now(),
-    };
-    roomMessages.push(msg);
-    if (roomMessages.length > 20) {
-      const removed = roomMessages.shift();
-      io.emit("room:delete", removed.id);
-    }
-    saveJSON(ROOM_FILE, roomMessages);
+    });
+    await msg.save();
     io.emit("room:message", msg);
   });
 });

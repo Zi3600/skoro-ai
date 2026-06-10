@@ -410,9 +410,10 @@
     const meRes = await fetch(`${BACKEND}/me/pfp`, { headers: { "x-auth-token": authToken } });
     const meData = await meRes.json();
     setPfp(meData.pfp);
-    if (currentUsername === "drerrie1") document.getElementById("admin-link").style.display = "";
+    if (currentUsername === "dev") document.getElementById("admin-link").style.display = "";
     renderSlots();
     switchSlot(1);
+    updateBar(meData.pct ?? 0);
     initSocket();
   }
 
@@ -476,7 +477,7 @@
     sender.className = "sender";
     sender.textContent = msg.displayName;
 
-    if (currentUsername === "drerrie1") {
+    if (currentUsername === "dev") {
       const del = document.createElement("button");
       del.className = "del-btn";
       del.textContent = "verwijder";
