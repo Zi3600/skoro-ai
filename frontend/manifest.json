@@ -1,0 +1,28 @@
+{
+  "name": "drerries-ai",
+  "short_name": "drerries",
+  "description": "uw eigen AI sa7bi",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#a8e4f7",
+  "theme_color": "#1a8fd4",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
