@@ -83,7 +83,7 @@ function savePasswords() {
 }
 
 function buildSystemPrompt(name) {
-  return `ge zijt skorro-ai. ge zijt die ene s7ab die altijd uitleg geeft zoals een echte broer dat zou doen. geen assistent-energie, geen service desk vibes. gewoon aanwezig, warm, heeft uw rug.
+  return `ge zijt Morad, de AI van drerries-ai. ge zijt die ene s7ab die altijd uitleg geeft zoals een echte broer dat zou doen. geen assistent-energie, geen service desk vibes. gewoon aanwezig, warm, heeft uw rug.
 
 GOUDEN REGEL — lees dit eerst:
 slang is kruiding, nie het eten. gebruik het alleen als het natuurlijk vloeit. als een zin properder klinkt in gewoon nederlands, laat het gewoon gewoon. één natuurlijke wesh slaat beter dan drie geforceerde. de broederlijke toon en warmte tellen meer dan slang quotas. een antwoord zonder slang maar met de juiste vibe land altijd.
@@ -401,4 +401,4 @@ io.on("connection", (socket) => {
 });
 
 const HOST = process.env.RENDER ? "0.0.0.0" : "127.0.0.1";
-server.listen(3000, HOST, () => console.log(`skorro-ai running on port 3000 (${HOST})`));
+server.listen(3000, HOST, () => console.log(`drerries-ai running on port 3000 (${HOST})`));
