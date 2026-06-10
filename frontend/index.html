@@ -288,10 +288,7 @@
 </div>
 
 <header>
-  <div style="display:flex; align-items:center; gap:10px;">
-    <img src="morad.png" onerror="this.style.display='none'" style="width:32px; height:32px; border:1px solid rgba(255,255,255,0.8); object-fit:cover;" />
-    <span>drerries-ai</span>
-  </div>
+  <span>drerries-ai</span>
   <div id="header-right">
     <div id="pfp">
       <svg id="pfp-placeholder" width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -546,6 +543,26 @@
   });
 
   function addMessage(role, text, imageSrc) {
+    if (role === "assistant") {
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText = "display:flex; align-items:flex-start; gap:8px;";
+
+      const avatar = document.createElement("img");
+      avatar.src = "morad.png";
+      avatar.onerror = () => avatar.style.display = "none";
+      avatar.style.cssText = "width:28px; height:28px; object-fit:cover; border:1px solid rgba(255,255,255,0.8); flex-shrink:0; margin-top:2px;";
+
+      const div = document.createElement("div");
+      div.className = `message ${role}`;
+      div.textContent = text;
+
+      wrapper.appendChild(avatar);
+      wrapper.appendChild(div);
+      chat.appendChild(wrapper);
+      chat.scrollTop = chat.scrollHeight;
+      return div;
+    }
+
     const div = document.createElement("div");
     div.className = `message ${role}`;
     div.textContent = text;
