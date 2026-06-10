@@ -23,7 +23,7 @@ app.use("/pfps", express.static("pfps"));
 app.use(express.static(require("path").join(__dirname, "../frontend")));
 
 const USERS = {
-  drerrie1: "pass1",
+  dev: "proteine1234",
   drerrie2: "pass2",
   drerrie3: "pass3",
   drerrie4: "pass4",
@@ -31,7 +31,7 @@ const USERS = {
 };
 
 const NAMES = {
-  drerrie1: "Zi",
+  dev: "Zi",
   drerrie2: "drerrie 2",
   drerrie3: "drerrie 3",
   drerrie4: "drerrie 4",
@@ -62,7 +62,7 @@ const userPfps = loadJSON(PFPS_FILE);
 function requireAdmin(req, res, next) {
   const token = req.headers["x-auth-token"];
   if (!token || !tokens[token]) return res.status(401).json({ error: "nie geautoriseerd" });
-  if (tokens[token] !== "drerrie1") return res.status(403).json({ error: "alleen voor Zi g" });
+  if (tokens[token] !== "dev") return res.status(403).json({ error: "alleen voor Zi g" });
   req.username = tokens[token];
   next();
 }
@@ -161,7 +161,7 @@ app.post("/login", (req, res) => {
     const token = Math.random().toString(36).substring(2);
     tokens[token] = username;
     const slots = getSlots(username).map(s => ({ id: s.id, title: s.title, empty: s.messages.length === 0 }));
-    res.json({ success: true, token, slots, username, pfp: userPfps[username] || null, isAdmin: username === "drerrie1" });
+    res.json({ success: true, token, slots, username, pfp: userPfps[username] || null, isAdmin: username === "dev" });
   } else {
     res.json({ success: false });
   }
@@ -199,9 +199,9 @@ app.get("/room", requireAuth, (req, res) => {
   res.json({ messages: roomMessages });
 });
 
-// Delete room message (drerrie1 only)
+// Delete room message (dev only)
 app.delete("/room/:msgId", requireAuth, (req, res) => {
-  if (req.username !== "drerrie1") return res.status(403).json({ error: "nie voor u g" });
+  if (req.username !== "dev") return res.status(403).json({ error: "nie voor u g" });
   roomMessages = roomMessages.filter(m => m.id !== req.params.msgId);
   saveJSON(ROOM_FILE, roomMessages);
   io.emit("room:delete", req.params.msgId);
@@ -352,7 +352,7 @@ app.post("/admin/users", requireAdmin, (req, res) => {
 // Admin — delete user
 app.delete("/admin/users/:username", requireAdmin, (req, res) => {
   const { username } = req.params;
-  if (username === "drerrie1") return res.status(400).json({ error: "ge kunt uzelf nie verwijderen g" });
+  if (username === "dev") return res.status(400).json({ error: "ge kunt uzelf nie verwijderen g" });
   if (!USERS[username]) return res.status(404).json({ error: "user nie gevonden" });
   delete USERS[username];
   delete NAMES[username];
