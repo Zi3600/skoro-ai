@@ -37,15 +37,12 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
 const upload = multer({ dest: "uploads/" });
-const uploadPfp = multer({ dest: "pfps/" });
+const uploadPfp = multer({ storage: multer.memoryStorage() });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.use(cors());
-app.use(express.json());
-app.use("/pfps", express.static("pfps"));
+app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "../frontend")));
-
-if (!fs.existsSync("pfps")) fs.mkdirSync("pfps");
 
 const USERS = {
   dev: "proteine1234",
@@ -324,22 +321,16 @@ app.post("/admin/users/:username/name", requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Admin — upload pfp
+// Admin — upload pfp (stored as base64 in MongoDB)
 app.post("/admin/users/:username/pfp", requireAdmin, uploadPfp.single("pfp"), async (req, res) => {
   const { username } = req.params;
   if (!USERS[username]) return res.status(404).json({ error: "user nie gevonden" });
   if (!req.file) return res.status(400).json({ error: "geen foto" });
-  const ext = req.file.originalname.split(".").pop();
-  const filename = `${username}.${ext}`;
-  const dest = `pfps/${filename}`;
+  const base64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
   const data = await getUserData(username);
-  if (data.pfp) {
-    try { fs.unlinkSync(data.pfp.replace("/pfps/", "pfps/")); } catch {}
-  }
-  fs.renameSync(req.file.path, dest);
-  data.pfp = `/pfps/${filename}`;
+  data.pfp = base64;
   await data.save();
-  res.json({ success: true, pfp: data.pfp });
+  res.json({ success: true, pfp: base64 });
 });
 
 // Admin — reset spend

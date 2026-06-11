@@ -213,7 +213,7 @@
         <div class="user-row" id="row-${u.username}">
           <div class="user-pfp" id="pfp-${u.username}">
             ${u.pfp
-              ? `<img src="${BACKEND}${u.pfp}" />`
+              ? `<img src="${u.pfp}" />`
               : `<svg width="24" height="24" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="8" r="4" fill="rgba(255,255,255,0.85)"/><path d="M2 20c0-5 4-8 9-8s9 3 9 8" stroke="rgba(255,255,255,0.85)" stroke-width="2" fill="none" stroke-linecap="round"/></svg>`}
           </div>
           <div class="user-info">

@@ -278,6 +278,101 @@
     #send-btn:hover { background: linear-gradient(180deg, #9de4ff 0%, #55c0f5 40%, #2a9fe0 100%); }
     #image-name { font-size: 0.72rem; color: #3a8aaa; padding: 4px 0 0 4px; }
     .typing { color: #5a9ab5; font-style: italic; font-size: 0.85rem; }
+
+    /* Ad slots */
+    .ad-label {
+      font-size: 0.58rem;
+      color: #8ab0c0;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+      padding: 0 2px;
+    }
+
+    .ad-content {
+      background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(200,240,255,0.5) 100%);
+      border: 1px dashed rgba(100,180,240,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #8ab0c0;
+      font-size: 0.72rem;
+      overflow: hidden;
+    }
+
+    /* Desktop: ad fills remaining sidebar space */
+    #chat-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+
+    #sidebar-ad { margin-top: auto; padding-top: 8px; }
+    #sidebar-ad .ad-content { width: 100%; height: 180px; }
+
+    /* Mobile: ad below chat, half height of chat area */
+    #mobile-ad { display: none; }
+
+    @media (max-width: 600px) {
+      #sidebar-ad { display: none; }
+      #mobile-ad {
+        display: block;
+        flex-shrink: 0;
+        padding: 6px 12px 4px;
+        background: rgba(255,255,255,0.25);
+        border-top: 1px solid rgba(255,255,255,0.6);
+      }
+      #mobile-ad .ad-content { width: 100%; height: 80px; }
+      #chat-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+      #chat { flex: 1; min-height: 0; }
+    }
+
+    #menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 6px;
+      font-size: 1.2rem;
+      color: #1a5a7a;
+      line-height: 1;
+    }
+
+    #sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 50;
+    }
+
+    @media (max-width: 600px) {
+      body { height: 100dvh; }
+
+      #menu-btn { display: block; }
+
+      #sidebar {
+        position: fixed;
+        left: -200px;
+        top: 0;
+        bottom: 0;
+        width: 200px;
+        z-index: 100;
+        transition: left 0.2s;
+        padding-top: 20px;
+        overflow-y: auto;
+      }
+
+      #sidebar.open { left: 0; }
+      #sidebar-overlay.open { display: block; }
+
+      .message { max-width: 88%; }
+      .room-msg { max-width: 88%; }
+
+      header { padding: 10px 14px; font-size: 1rem; }
+      #credit-bar-wrap { padding: 4px 14px; }
+
+      #input-area { padding: 10px 12px; gap: 6px; }
+      #send-btn { padding: 9px 12px; font-size: 0.82rem; }
+      .icon-btn { padding: 9px 10px; font-size: 0.82rem; }
+    }
   </style>
 </head>
 <body>
@@ -294,8 +389,13 @@
   <a href="watisdit.html" style="font-size:0.72rem; color:#a0d0f0; text-decoration:none; margin-top:4px;">wat is dit?</a>
 </div>
 
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <header>
-  <span>drerries-ai</span>
+  <div style="display:flex;align-items:center;gap:10px;">
+    <button id="menu-btn" onclick="toggleSidebar()">☰</button>
+    <span>drerries-ai</span>
+  </div>
   <div id="header-right">
     <div id="pfp">
       <svg id="pfp-placeholder" width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -324,8 +424,18 @@
     <div class="slot-row">
       <button id="room-btn" class="slot-btn" onclick="openRoom()">drerries</button>
     </div>
+    <div id="sidebar-ad">
+      <div class="ad-label">advertentie</div>
+      <div class="ad-content" id="sidebar-ad-content"></div>
+    </div>
   </div>
-  <div id="chat"></div>
+  <div id="chat-wrap">
+    <div id="chat"></div>
+    <div id="mobile-ad">
+      <div class="ad-label">advertentie</div>
+      <div class="ad-content" id="mobile-ad-content"></div>
+    </div>
+  </div>
 </div>
 
 <div id="input-area">
@@ -341,6 +451,16 @@
 <script src="https://skoro-ai.onrender.com/socket.io/socket.io.js"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+
+  function toggleSidebar() {
+    document.getElementById("sidebar").classList.toggle("open");
+    document.getElementById("sidebar-overlay").classList.toggle("open");
+  }
+
+  function closeSidebar() {
+    document.getElementById("sidebar").classList.remove("open");
+    document.getElementById("sidebar-overlay").classList.remove("open");
+  }
 
   const BACKEND = "https://skoro-ai.onrender.com";
 
@@ -393,7 +513,7 @@
     if (url) {
       document.getElementById("pfp-placeholder").style.display = "none";
       const img = document.getElementById("pfp-img");
-      img.src = BACKEND + url;
+      img.src = url;
       img.style.display = "block";
     } else {
       document.getElementById("pfp-placeholder").style.display = "";
@@ -455,6 +575,7 @@
   async function switchSlot(id) {
     inRoom = false;
     activeSlot = id;
+    closeSidebar();
     renderSlots();
     document.getElementById("foto-btn").style.display = "";
     input.placeholder = "vraag maar g";
@@ -467,6 +588,7 @@
 
   async function openRoom() {
     inRoom = true;
+    closeSidebar();
     renderSlots();
     document.getElementById("foto-btn").style.display = "none";
     input.placeholder = "typ iets g...";
