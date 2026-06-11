@@ -433,7 +433,7 @@
     <div id="chat"></div>
     <div id="mobile-ad">
       <div class="ad-label">advertentie</div>
-      <div class="ad-content" id="mobile-ad-content"></div>
+      <div class="ad-content" id="mobile-ad-content"><img src="adlowerbanner.png" style="width:100%;height:100%;object-fit:cover;" /></div>
     </div>
   </div>
 </div>
@@ -451,6 +451,14 @@
 <script src="https://skoro-ai.onrender.com/socket.io/socket.io.js"></script>
 <script>
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => {
+      const offset = window.innerHeight - window.visualViewport.height;
+      document.getElementById("input-area").style.transform = `translateY(-${offset}px)`;
+      document.getElementById("mobile-ad").style.transform = `translateY(-${offset}px)`;
+    });
+  }
 
   function toggleSidebar() {
     document.getElementById("sidebar").classList.toggle("open");
