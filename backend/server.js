@@ -141,6 +141,54 @@ REGELS:
 7. leg uit zoals ge het aan uw beste s7ab uitlegt die er niks van weet`;
 }
 
+function buildMoradScientificPrompt(name) {
+  return `ge zijt Morad maar in wetenschappelijke modus. ge bent die ene die direct to the point gaat voor ${name}.
+
+KERNREGEL: drop formulas en berekeningen onmiddellijk. geen inleiding, geen uitleg over de uitleg, gewoon direct de essentie.
+
+AANPAK:
+begin met "iyeee daar ${name}" dan meteen de kern
+formules schrijf je direct, geen opbouw ernaartoe
+lange redenering is ok maar houd de taal kort en strak
+geen paragrafen, geen bullet points
+als er een berekening nodig is, doe ze volledig en direct
+gebruik gewone taal maar geen straattaal in wetenschappelijke uitleg
+
+VERBODEN:
+geen disclaimers
+geen "goed vraag"
+geen uitgebreide intro
+geen herhaling van de vraag
+geen vloekwoorden
+
+REGELS:
+1. geen rwina
+2. geen snitchings
+3. begin altijd met iyeee daar ${name}
+4. drop formules meteen
+5. redeneer volledig maar praat weinig`;
+}
+
+function buildFastAnswerPrompt() {
+  return `You are FastAnswer, a direct homework answer bot. The user sends you a photo of homework, exercises or a textbook page.
+
+YOUR ONLY JOB: look at what is literally in the image and give direct answers.
+
+RULES:
+- Answer only what is literally visible in the image. Never invent or assume.
+- For each question, exercise or blank you see: give only the direct answer. No explanation unless the question explicitly asks for it.
+- If you see a math problem: solve it and show only the result (and working if needed).
+- If you see fill-in-the-blank: fill in the blank.
+- If you see multiple choice: pick the answer.
+- Keep answers as short as possible.
+
+RETURN FORMAT - always return valid JSON like this:
+{"answers": [{"label": "vraag 1", "answer": "direct antwoord", "area": "top"}, {"label": "vraag 2", "answer": "direct antwoord", "area": "middle"}]}
+
+Use area: "top", "middle" or "bottom" based on where in the image the question appears.
+If no image is provided, respond normally in Dutch, fast and direct, no fluff.`;
+}
+
 function requireAuth(req, res, next) {
   const token = req.headers["x-auth-token"];
   if (!token || !tokens[token]) return res.status(401).json({ error: "Locked out g" });
@@ -221,77 +269,133 @@ app.delete("/room/:msgId", requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
+const MODE_MODELS = {
+  regular: "gpt-4o-mini",
+  smart: "gpt-4o",
+  morad: "gpt-4o",
+  fastanswer: "gpt-4o-mini",
+};
+
+const MODE_MAX_TOKENS = {
+  regular: 300,
+  smart: 600,
+  morad: 800,
+  fastanswer: 600,
+};
+
 // Chat
 app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
-  const { message, slotId } = req.body;
-  const username = req.username;
-  const name = NAMES[username] || username;
+  try {
+    const { message, slotId, mode = "regular" } = req.body;
+    const username = req.username;
+    const name = NAMES[username] || username;
 
-  const data = await getUserData(username);
+    const data = await getUserData(username);
 
-  if (data.spend >= MAX_EURO) {
-    const newPass = newPassword();
-    USERS[username] = newPass;
-    delete tokens[req.authToken];
-    return res.json({ reply: "ge zit op uw limiet broeder, vraag een nieuw wachtwoord aan Zi3600", locked: true });
+    if (data.spend >= MAX_EURO) {
+      const newPass = newPassword();
+      USERS[username] = newPass;
+      delete tokens[req.authToken];
+      return res.json({ reply: "ge zit op uw limiet broeder, vraag een nieuw wachtwoord aan Zi3600", locked: true });
+    }
+
+    const slot = data.chats.find(s => s.id === parseInt(slotId));
+    if (!slot) return res.status(404).json({ error: "slot nie gevonden" });
+
+    let systemPrompt;
+    if (mode === "morad") systemPrompt = buildMoradScientificPrompt(name);
+    else if (mode === "fastanswer") systemPrompt = buildFastAnswerPrompt();
+    else systemPrompt = buildSystemPrompt(name);
+
+    const history = [{ role: "system", content: systemPrompt }];
+    for (const m of slot.messages) {
+      history.push({ role: m.role, content: m.content });
+    }
+
+    let userMessage;
+    let storedContent;
+    const isFastAnswerImage = mode === "fastanswer" && req.file;
+
+    if (req.file) {
+      const imageData = fs.readFileSync(req.file.path);
+      const base64Image = imageData.toString("base64");
+      const mimeType = req.file.mimetype;
+      userMessage = {
+        role: "user",
+        content: [
+          { type: "text", text: isFastAnswerImage ? "geef direct antwoorden op alles wat je ziet in deze afbeelding. return JSON." : (message || "wat is dit?") },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+        ],
+      };
+      storedContent = message || (isFastAnswerImage ? "[foto voor fastanswer]" : "wat is dit?");
+      fs.unlinkSync(req.file.path);
+    } else {
+      userMessage = { role: "user", content: message };
+      storedContent = message;
+    }
+
+    history.push(userMessage);
+
+    const model = MODE_MODELS[mode] || "gpt-4o-mini";
+    const maxTokens = MODE_MAX_TOKENS[mode] || 300;
+
+    const completion = await openai.chat.completions.create({
+      model,
+      messages: history,
+      max_tokens: maxTokens,
+      ...(isFastAnswerImage ? { response_format: { type: "json_object" } } : {}),
+    });
+
+    const reply = completion.choices[0].message.content;
+
+    slot.messages.push({ role: "user", content: storedContent });
+    slot.messages.push({ role: "assistant", content: reply });
+
+    if (slot.messages.length === 2) {
+      slot.title = storedContent.substring(0, 28) + (storedContent.length > 28 ? "..." : "");
+    }
+
+    data.markModified("chats");
+
+    const cost = calcCostEuro(completion.usage);
+    data.spend += cost;
+    await data.save();
+
+    const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
+    console.log(`[${username}] mode:${mode} model:${model} slot:${slotId} spent:€${data.spend.toFixed(4)}`);
+
+    res.json({ reply, pct, isAnnotation: isFastAnswerImage });
+  } catch (e) {
+    console.error("chat error:", e.message);
+    res.status(500).json({ error: e.message });
   }
+});
 
-  const slot = data.chats.find(s => s.id === parseInt(slotId));
-  if (!slot) return res.status(404).json({ error: "slot nie gevonden" });
+// Image generation
+app.post("/generate-image", requireAuth, async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt) return res.status(400).json({ error: "geen prompt" });
+    const data = await getUserData(req.username);
+    if (data.spend >= MAX_EURO) return res.status(403).json({ error: "limiet bereikt" });
 
-  const history = [{ role: "system", content: buildSystemPrompt(name) }];
-  for (const m of slot.messages) {
-    history.push({ role: m.role, content: m.content });
+    const response = await openai.images.generate({
+      model: "dall-e-2",
+      prompt,
+      n: 1,
+      size: "512x512",
+    });
+
+    const imageCost = 0.018 * 0.92;
+    data.spend += imageCost;
+    await data.save();
+
+    const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
+    res.json({ url: response.data[0].url, pct });
+  } catch (e) {
+    console.error("image gen error:", e.message);
+    res.status(500).json({ error: e.message });
   }
-
-  let userMessage;
-  let storedContent;
-
-  if (req.file) {
-    const imageData = fs.readFileSync(req.file.path);
-    const base64Image = imageData.toString("base64");
-    const mimeType = req.file.mimetype;
-    userMessage = {
-      role: "user",
-      content: [
-        { type: "text", text: message || "wat is dit?" },
-        { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
-      ],
-    };
-    storedContent = message || "wat is dit?";
-    fs.unlinkSync(req.file.path);
-  } else {
-    userMessage = { role: "user", content: message };
-    storedContent = message;
-  }
-
-  history.push(userMessage);
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: history,
-    max_tokens: 300,
-  });
-
-  const reply = completion.choices[0].message.content;
-
-  slot.messages.push({ role: "user", content: storedContent });
-  slot.messages.push({ role: "assistant", content: reply });
-
-  if (slot.messages.length === 2) {
-    slot.title = storedContent.substring(0, 28) + (storedContent.length > 28 ? "..." : "");
-  }
-
-  data.markModified("chats");
-
-  const cost = calcCostEuro(completion.usage);
-  data.spend += cost;
-  await data.save();
-
-  const pct = Math.min((data.spend / MAX_EURO) * 100, 100);
-  console.log(`[${username}] slot ${slotId} | spent: €${data.spend.toFixed(4)}`);
-
-  res.json({ reply, pct });
 });
 
 // Admin — list users

@@ -279,6 +279,111 @@
     #image-name { font-size: 0.72rem; color: #3a8aaa; padding: 4px 0 0 4px; }
     .typing { color: #5a9ab5; font-style: italic; font-size: 0.85rem; }
 
+    #mode-badge {
+      font-size: 0.6rem;
+      padding: 2px 8px;
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      text-shadow: 0 1px 2px rgba(0,80,160,0.4);
+      white-space: nowrap;
+    }
+
+    /* Onboarding modal */
+    #onboarding {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      font-family: Tahoma, sans-serif;
+      padding: 20px;
+    }
+
+    #onboarding.show { display: flex; }
+
+    .ob-box {
+      background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(220,245,255,0.92) 100%);
+      border: 1px solid rgba(255,255,255,0.9);
+      box-shadow: 0 4px 24px rgba(0,100,200,0.3);
+      padding: 28px 30px;
+      max-width: 460px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .ob-box h2 { font-size: 1rem; color: #1a5a7a; }
+    .ob-box p { font-size: 0.82rem; color: #3a6a8a; line-height: 1.6; }
+
+    .ob-choice {
+      background: linear-gradient(180deg, rgba(255,255,255,0.85) 0%, rgba(210,240,255,0.75) 100%);
+      border: 2px solid rgba(100,180,240,0.4);
+      padding: 12px 16px;
+      cursor: pointer;
+      font-family: Tahoma, sans-serif;
+      font-size: 0.82rem;
+      color: #1a5a7a;
+      text-align: left;
+      transition: all 0.15s;
+    }
+
+    .ob-choice:hover, .ob-choice.picked {
+      border-color: #3aaeee;
+      background: linear-gradient(180deg, rgba(200,240,255,0.9) 0%, rgba(160,220,255,0.85) 100%);
+    }
+
+    .ob-choice strong { display: block; font-size: 0.85rem; margin-bottom: 3px; }
+    .ob-choice span { font-size: 0.72rem; color: #5a8aaa; }
+
+    .ob-btn {
+      padding: 10px 24px;
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      border: 1px solid rgba(255,255,255,0.6);
+      color: white;
+      font-family: Tahoma, sans-serif;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 3px 8px rgba(0,100,200,0.3);
+      align-self: flex-end;
+    }
+
+    /* Image gen */
+    #img-gen-area {
+      display: none;
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.4);
+      border-top: 1px solid rgba(255,255,255,0.6);
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    #img-gen-area.show { display: flex; }
+    #img-gen-input {
+      flex: 1;
+      padding: 7px 12px;
+      border: 1px solid rgba(100,180,240,0.6);
+      background: rgba(255,255,255,0.9);
+      font-family: Tahoma, sans-serif;
+      font-size: 0.82rem;
+      color: #1a3a4a;
+      outline: none;
+    }
+    #img-gen-btn {
+      padding: 7px 14px;
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      border: 1px solid rgba(255,255,255,0.6);
+      color: white;
+      font-family: Tahoma, sans-serif;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
     /* Ad slots */
     .ad-label {
       font-size: 0.58rem;
@@ -387,6 +492,32 @@
   <button onclick="login()" style="padding:9px 24px; border:1px solid rgba(255,255,255,0.6); background:linear-gradient(180deg,#7dd6f7 0%,#3aaeee 40%,#1a8fd4 100%); color:white; font-family:Tahoma,sans-serif; font-size:0.88rem; font-weight:700; cursor:pointer; box-shadow:0 3px 8px rgba(0,100,200,0.35);">dghil</button>
   <p id="login-error" style="color:#ff6060; display:none; font-size:0.82rem;">verkeerd g probeer opnieuw</p>
   <a href="watisdit.html" style="font-size:0.72rem; color:#a0d0f0; text-decoration:none; margin-top:4px;">wat is dit?</a>
+  <a href="policy.html" style="font-size:0.5rem; color:#5a8aaa; text-decoration:none; position:fixed; bottom:6px; right:8px;">privacy policy</a>
+</div>
+
+<div id="onboarding">
+  <div class="ob-box">
+    <h2 id="ob-title">welkom bij drerries-ai</h2>
+    <p id="ob-sub">kies hoe ge de AI wilt gebruiken</p>
+    <div id="ob-step1">
+      <div class="ob-choice" onclick="obPick('regular')">
+        <strong>gewoon chatten en vragen stellen</strong>
+        <span>Morad legt alles uit zoals een goede vriend dat doet</span>
+      </div>
+      <div class="ob-choice" onclick="obPick('morad')">
+        <strong>studeren, exacte vakken, formules</strong>
+        <span>Morad wetenschappelijk gooit direct formules en berekeningen</span>
+      </div>
+      <div class="ob-choice" onclick="obPick('fastanswer')">
+        <strong>snel antwoorden op fotos van huiswerk</strong>
+        <span>FastAnswer schrijft direct op jouw foto wat de antwoorden zijn</span>
+      </div>
+      <div class="ob-choice" onclick="obPick('smart')">
+        <strong>ik wil de slimste versie</strong>
+        <span>extra intelligentie, veel meer credits per bericht</span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="sidebar-overlay" onclick="closeSidebar()"></div>
@@ -405,6 +536,7 @@
       <img id="pfp-img" src="" style="display:none; width:34px; height:34px; object-fit:cover;" />
     </div>
     <button id="logout-btn" onclick="logout()">uitloggen</button>
+    <div id="mode-badge" onclick="window.location.href='settings.html'">regulier</div>
     <small id="admin-link" style="display:none;"><a href="manage.html" style="color:#e84040; text-decoration:none; font-size:0.7rem; font-weight:700;">beheer</a></small>
     <small><a href="dev.html" style="color:#4a8aaa; text-decoration:none; font-size:0.7rem; font-weight:400;">groep JDM</a></small>
   </div>
@@ -438,6 +570,11 @@
   </div>
 </div>
 
+<div id="img-gen-area">
+  <input id="img-gen-input" placeholder="beschrijf wat ge wilt maken..." />
+  <button id="img-gen-btn" onclick="generateImage()">maak foto</button>
+</div>
+
 <div id="input-area">
   <div style="flex:1; display:flex; flex-direction:column;">
     <textarea id="message-input" rows="1" placeholder="vraag maar g"></textarea>
@@ -460,6 +597,100 @@
     });
   }
 
+  // Mode
+  const MODE_LABELS = { regular: "regulier", smart: "slim", morad: "wetenschappelijk", fastanswer: "FastAnswer" };
+  let currentMode = localStorage.getItem("aiMode") || "regular";
+
+  function applyMode() {
+    document.getElementById("mode-badge").textContent = MODE_LABELS[currentMode] || "regulier";
+    const isImageGen = currentMode === "smart" || currentMode === "regular" || currentMode === "morad";
+    document.getElementById("img-gen-area").classList.toggle("show", isImageGen);
+    input.placeholder = currentMode === "fastanswer" ? "stuur een foto of stel een snelle vraag" : "vraag maar g";
+  }
+
+  // Onboarding
+  function obPick(mode) {
+    localStorage.setItem("aiMode", mode);
+    localStorage.setItem("onboarded", "1");
+    currentMode = mode;
+    document.getElementById("onboarding").classList.remove("show");
+    applyMode();
+  }
+
+  function checkOnboarding() {
+    if (!localStorage.getItem("onboarded")) {
+      document.getElementById("onboarding").classList.add("show");
+    }
+  }
+
+  // FastAnswer canvas annotation
+  async function renderAnnotation(imageFile, annotationsJson) {
+    let data;
+    try { data = JSON.parse(annotationsJson); } catch { return null; }
+    if (!data.answers || !data.answers.length) return null;
+
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const padding = 20;
+        const lineH = 22;
+        const answerH = data.answers.length * lineH + padding * 2;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height + answerH;
+        const ctx = canvas.getContext("2d");
+
+        ctx.drawImage(img, 0, 0);
+
+        // Answer panel below image
+        ctx.fillStyle = "rgba(20, 80, 150, 0.92)";
+        ctx.fillRect(0, img.height, canvas.width, answerH);
+
+        ctx.font = "bold 13px Tahoma, sans-serif";
+        ctx.fillStyle = "white";
+        data.answers.forEach((a, i) => {
+          const y = img.height + padding + i * lineH;
+          ctx.fillText(`${a.label}: ${a.answer}`, padding, y + 13);
+        });
+
+        resolve(canvas.toDataURL("image/png"));
+      };
+      img.src = URL.createObjectURL(imageFile);
+    });
+  }
+
+  // Image generation
+  async function generateImage() {
+    const prompt = document.getElementById("img-gen-input").value.trim();
+    if (!prompt) return;
+    const btn = document.getElementById("img-gen-btn");
+    btn.textContent = "bezig...";
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${BACKEND}/generate-image`, {
+        method: "POST",
+        headers: { "x-auth-token": authToken, "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        const div = document.createElement("div");
+        div.className = "message assistant";
+        div.style.maxWidth = "320px";
+        const img = document.createElement("img");
+        img.src = data.url;
+        img.style.cssText = "width:100%; display:block; border:1px solid rgba(255,255,255,0.6);";
+        div.appendChild(img);
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+        if (data.pct !== undefined) updateBar(data.pct);
+        document.getElementById("img-gen-input").value = "";
+      }
+    } catch (e) { console.error(e); }
+    btn.textContent = "maak foto";
+    btn.disabled = false;
+  }
+
   function toggleSidebar() {
     document.getElementById("sidebar").classList.toggle("open");
     document.getElementById("sidebar-overlay").classList.toggle("open");
@@ -478,6 +709,8 @@
   let inRoom = false;
   let slots = [];
   let socket = null;
+
+  applyMode();
 
   if (authToken) {
     document.getElementById("login-screen").style.display = "none";
@@ -512,6 +745,7 @@
       renderSlots();
       switchSlot(1);
       initSocket();
+      checkOnboarding();
     } else {
       document.getElementById("login-error").style.display = "block";
     }
@@ -742,13 +976,30 @@
     const formData = new FormData();
     formData.append("message", message);
     formData.append("slotId", activeSlot);
+    formData.append("mode", currentMode);
     if (file) formData.append("image", file);
 
     const res = await fetch(`${BACKEND}/chat`, { method: "POST", body: formData, headers: { "x-auth-token": authToken } });
     const data = await res.json();
 
     typing.classList.remove("typing");
-    typing.textContent = data.reply;
+
+    if (data.isAnnotation && file) {
+      const dataUrl = await renderAnnotation(file, data.reply);
+      if (dataUrl) {
+        typing.textContent = "";
+        const img = document.createElement("img");
+        img.src = dataUrl;
+        img.style.cssText = "max-width:100%; display:block; border:1px solid rgba(255,255,255,0.6); cursor:pointer;";
+        img.title = "klik om te downloaden";
+        img.onclick = () => { const a = document.createElement("a"); a.href = dataUrl; a.download = "fastanswer.png"; a.click(); };
+        typing.appendChild(img);
+      } else {
+        typing.textContent = data.reply;
+      }
+    } else {
+      typing.textContent = data.reply;
+    }
 
     if (data.pct !== undefined) updateBar(data.pct);
     if (data.locked) setTimeout(() => logout(), 2000);

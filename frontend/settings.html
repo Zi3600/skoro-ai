@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>drerries-ai / instellingen</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Tahoma, Verdana, Geneva, sans-serif;
+      background: url('background.jpg') center/cover no-repeat fixed, linear-gradient(160deg, #a8e4f7 0%, #c9f0c8 50%, #7ecff5 100%);
+      color: #1a3a4a;
+      min-height: 100vh;
+    }
+    header {
+      padding: 14px 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.75) 0%, rgba(160,220,255,0.6) 50%, rgba(100,190,240,0.5) 100%);
+      backdrop-filter: blur(8px);
+      border-bottom: 2px solid rgba(255,255,255,0.8);
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #1a5a7a;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.9);
+      box-shadow: 0 2px 8px rgba(100,200,255,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header a { font-size: 0.7rem; font-weight: 400; color: #4a8aaa; text-decoration: none; }
+    .container { max-width: 680px; margin: 40px auto; padding: 0 20px 60px; display: flex; flex-direction: column; gap: 20px; }
+    h1 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: #4a8aaa; }
+    .mode-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.88) 0%, rgba(220,245,255,0.82) 100%);
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 2px 12px rgba(0,150,255,0.12), inset 0 1px 0 rgba(255,255,255,0.8);
+      padding: 20px 24px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-card.selected {
+      border-color: #3aaeee;
+      box-shadow: 0 0 0 2px #3aaeee, 0 2px 12px rgba(0,150,255,0.2);
+    }
+    .mode-card:hover { background: linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(210,245,255,0.95) 100%); }
+    .mode-card h2 { font-size: 0.88rem; font-weight: 700; color: #1a5a7a; margin-bottom: 6px; }
+    .mode-card p { font-size: 0.78rem; line-height: 1.7; color: #3a6a8a; }
+    .cost-badge {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 3px 10px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      border: 1px solid;
+    }
+    .cost-low { background: rgba(180,255,200,0.5); color: #1a7a3a; border-color: rgba(100,200,120,0.5); }
+    .cost-mid { background: rgba(255,240,160,0.5); color: #7a5a00; border-color: rgba(200,180,80,0.5); }
+    .cost-high { background: rgba(255,200,180,0.5); color: #7a2a00; border-color: rgba(220,140,100,0.5); }
+    .save-btn {
+      padding: 10px 28px;
+      background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
+      border: 1px solid rgba(255,255,255,0.6);
+      color: white;
+      font-family: Tahoma, sans-serif;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 3px 8px rgba(0,100,200,0.3);
+      align-self: flex-start;
+    }
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: rgba(30,120,200,0.9); color: white;
+      padding: 10px 18px; font-size: 0.82rem;
+      font-family: Tahoma, sans-serif;
+      box-shadow: 0 2px 12px rgba(0,100,200,0.3);
+      display: none;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <span>drerries-ai / instellingen</span>
+  <a href="index.html">terug</a>
+</header>
+
+<div class="container">
+  <h1>kies jouw AI modus</h1>
+
+  <div class="mode-card" id="card-regular" onclick="select('regular')">
+    <h2>Morad — regulier</h2>
+    <p>de normale Morad. casual, warm, legt alles uit zoals een goede s7ab. voor alles.</p>
+    <span class="cost-badge cost-low">goedkoopst</span>
+  </div>
+
+  <div class="mode-card" id="card-smart" onclick="select('smart')">
+    <h2>Morad — extra intelligentie</h2>
+    <p>zelfde Morad maar op een véél slimmer model. voor complexe uitleg, diepgaande vragen of als ge wilt dat het echt goed is. gebruikt meer credits.</p>
+    <span class="cost-badge cost-high">veel meer credits</span>
+  </div>
+
+  <div class="mode-card" id="card-morad" onclick="select('morad')">
+    <h2>Morad — wetenschappelijk</h2>
+    <p>Morad in wetenschappelijke modus. gooit direct formules en berekeningen, lange redenering maar korte chat. perfect voor exacte vakken, wiskunde, fysica, scheikunde. geen fluff, direct de essentie.</p>
+    <span class="cost-badge cost-high">meer credits</span>
+  </div>
+
+  <div class="mode-card" id="card-fastanswer" onclick="select('fastanswer')">
+    <h2>FastAnswer</h2>
+    <p>razendsnel. stuur een foto van je huiswerk en krijg direct de antwoorden op het originele beeld. geen uitleg, geen omwegen, gewoon de antwoorden. werkt op oefeningen, invulopdrachten, meerkeuzevragen en berekeningen. let op: antwoordt alleen op wat het letterlijk ziet, hallucineert nooit.</p>
+    <span class="cost-badge cost-low">goedkoop</span>
+  </div>
+
+  <button class="save-btn" onclick="save()">opslaan</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let selected = localStorage.getItem("aiMode") || "regular";
+  highlight();
+
+  function select(mode) {
+    selected = mode;
+    highlight();
+  }
+
+  function highlight() {
+    ["regular","smart","morad","fastanswer"].forEach(m => {
+      document.getElementById("card-" + m).classList.toggle("selected", m === selected);
+    });
+  }
+
+  function save() {
+    localStorage.setItem("aiMode", selected);
+    const t = document.getElementById("toast");
+    t.textContent = "opgeslagen g";
+    t.style.display = "block";
+    setTimeout(() => { t.style.display = "none"; window.location.href = "index.html"; }, 1200);
+  }
+</script>
+</body>
+</html>
