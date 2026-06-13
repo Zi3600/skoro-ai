@@ -55,6 +55,17 @@
     .cost-low { background: rgba(180,255,200,0.5); color: #1a7a3a; border-color: rgba(100,200,120,0.5); }
     .cost-mid { background: rgba(255,240,160,0.5); color: #7a5a00; border-color: rgba(200,180,80,0.5); }
     .cost-high { background: rgba(255,200,180,0.5); color: #7a2a00; border-color: rgba(220,140,100,0.5); }
+    .cost-luxe { background: rgba(255,230,120,0.55); color: #5a3a00; border-color: rgba(210,170,50,0.7); }
+    .mode-card.luxe {
+      background: linear-gradient(180deg, rgba(255,252,230,0.95) 0%, rgba(255,240,160,0.85) 100%);
+      border: 2px solid rgba(210,170,50,0.5);
+      box-shadow: 0 2px 14px rgba(200,150,0,0.18), inset 0 1px 0 rgba(255,255,220,0.9);
+    }
+    .mode-card.luxe.selected {
+      border-color: #c8a200;
+      box-shadow: 0 0 0 2px #c8a200, 0 2px 14px rgba(200,150,0,0.25);
+    }
+    .mode-card.luxe h2 { color: #5a3a00; }
     .save-btn {
       padding: 10px 28px;
       background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
@@ -92,6 +103,12 @@
     <span class="cost-badge cost-low">goedkoopst</span>
   </div>
 
+  <div class="mode-card luxe" id="card-wetenschappelijk" onclick="select('wetenschappelijk')">
+    <h2>wetenschappelijk</h2>
+    <p>stuur een foto van een opgave. de AI vraagt eerst wat ge wilt: antwoorden, formules of uitleg. daarna levert het precies dat. voor wiskunde, fysica, scheikunde, biologie.</p>
+    <span class="cost-badge cost-luxe">luxe · meer credits</span>
+  </div>
+
   <div class="mode-card" id="card-fastanswer" onclick="select('fastanswer')">
     <h2>FastAnswer</h2>
     <p>razendsnel. stuur een foto van je huiswerk en krijg direct de antwoorden op het originele beeld. geen uitleg, geen omwegen, gewoon de antwoorden. werkt op oefeningen, invulopdrachten, meerkeuzevragen en berekeningen.</p>
@@ -115,7 +132,7 @@
   }
 
   function highlight() {
-    ["regular","fastanswer"].forEach(m => {
+    ["regular","wetenschappelijk","fastanswer"].forEach(m => {
       document.getElementById("card-" + m).classList.toggle("selected", m === selected);
     });
     document.querySelectorAll("[data-persona-card]").forEach(el => {

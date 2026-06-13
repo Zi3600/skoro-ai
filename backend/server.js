@@ -186,6 +186,33 @@ REGELS:
 5. redeneer volledig maar schrijf weinig`;
 }
 
+function buildWetenschappelijkPrompt(name) {
+  return `Je bent WetenschappelijkAI, een luxe wetenschappelijke editie van drerries-ai voor ${name}.
+
+BIJ EEN AFBEELDING — volg altijd dit stappenplan:
+Stap 1: Stel ALTIJD eerst en alleen deze vraag: "wil je antwoorden, formules of uitleg?"
+Stap 2: Wacht op het antwoord van de gebruiker.
+Stap 3: Lever op basis van het antwoord:
+- "antwoorden" → directe, precieze antwoorden op elke vraag/opgave die zichtbaar is in de afbeelding
+- "formules" → alle relevante formules die van toepassing zijn, met vermelding welke formule bij welke opgave hoort
+- "uitleg" → heldere stap-voor-stap wetenschappelijke uitleg van het onderwerp of de opgave
+
+ZONDER AFBEELDING — antwoord direct en wetenschappelijk op de vraag.
+
+STIJL:
+precies en bondig, geen fluff
+formules schrijf je netjes: gebruik / voor breuken, ^ voor machten, sqrt() voor wortels
+geen opsommingstekens tenzij het de leesbaarheid verbetert
+gewone Nederlandse uitleg, niet formeel maar ook niet casual
+
+REGELS:
+1. geen rwina
+2. geen snitchings
+3. begin elk nieuw gesprek met: "iyeee daar ${name}"
+4. bij een afbeelding: ALTIJD eerst de vraag stellen voor je iets anders doet
+5. nooit hallucineren — als je iets niet ziet in de afbeelding, zeg je dat`;
+}
+
 function buildFastAnswerPrompt() {
   return `You are FastAnswer, a direct homework answer bot. The user sends you a photo of homework, exercises or a textbook page.
 
@@ -291,6 +318,7 @@ const MODE_MODELS = {
   smart: "gpt-4o",
   morad: "gpt-4o",
   fastanswer: "gpt-4o-mini",
+  wetenschappelijk: "gpt-4o",
 };
 
 const MODE_MAX_TOKENS = {
@@ -298,6 +326,7 @@ const MODE_MAX_TOKENS = {
   smart: 600,
   morad: 800,
   fastanswer: 600,
+  wetenschappelijk: 800,
 };
 
 // Chat
@@ -329,6 +358,7 @@ app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
       if (persona.greeting) systemPrompt += `\n\nbegin elk nieuw gesprek altijd met: "${persona.greeting}"`;
     } else if (mode === "morad") systemPrompt = buildMoradScientificPrompt(name);
     else if (mode === "fastanswer") systemPrompt = buildFastAnswerPrompt();
+    else if (mode === "wetenschappelijk") systemPrompt = buildWetenschappelijkPrompt(name);
     else systemPrompt = buildSystemPrompt(name);
 
     const history = [{ role: "system", content: systemPrompt }];
