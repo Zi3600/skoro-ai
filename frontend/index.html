@@ -647,7 +647,11 @@
   <h2 style="color:white; font-size:1.2rem; font-weight:700;">drerries-ai</h2>
   <input id="login-user" placeholder="username" style="padding:9px 14px; border:1px solid rgba(100,180,240,0.7); font-family:Tahoma,sans-serif; font-size:0.88rem; width:220px; background:rgba(255,255,255,0.92); color:#1a3a4a;" />
   <input id="login-pass" type="password" placeholder="wachtwoord g" style="padding:9px 14px; border:1px solid rgba(100,180,240,0.7); font-family:Tahoma,sans-serif; font-size:0.88rem; width:220px; background:rgba(255,255,255,0.92); color:#1a3a4a;" />
-  <button onclick="login()" style="padding:9px 24px; border:1px solid rgba(255,255,255,0.6); background:linear-gradient(180deg,#7dd6f7 0%,#3aaeee 40%,#1a8fd4 100%); color:white; font-family:Tahoma,sans-serif; font-size:0.88rem; font-weight:700; cursor:pointer; box-shadow:0 3px 8px rgba(0,100,200,0.35);">dghil</button>
+  <button id="login-btn" onclick="login()" style="padding:9px 24px; border:1px solid rgba(255,255,255,0.6); background:linear-gradient(180deg,#7dd6f7 0%,#3aaeee 40%,#1a8fd4 100%); color:white; font-family:Tahoma,sans-serif; font-size:0.88rem; font-weight:700; cursor:pointer; box-shadow:0 3px 8px rgba(0,100,200,0.35); width:220px; position:relative; overflow:hidden;">
+    <span id="login-btn-text">log in</span>
+    <span id="login-progress" style="position:absolute;left:0;top:0;height:100%;width:0%;background:rgba(255,255,255,0.18);transition:width 0.4s ease;pointer-events:none;"></span>
+  </button>
+  <p id="login-status" style="color:rgba(180,220,255,0.85); font-size:0.75rem; min-height:1.1em;"></p>
   <p id="login-error" style="color:#ff6060; display:none; font-size:0.82rem;">verkeerd g probeer opnieuw</p>
   <a href="watisdit.html" style="font-size:0.72rem; color:#a0d0f0; text-decoration:none; margin-top:4px;">wat is dit?</a>
   <a href="policy.html" style="font-size:0.5rem; color:#5a8aaa; text-decoration:none; position:fixed; bottom:6px; right:8px;">privacy policy</a>
@@ -918,20 +922,47 @@
   }
 
   async function login() {
+    const btn = document.getElementById("login-btn");
+    const btnText = document.getElementById("login-btn-text");
+    const progress = document.getElementById("login-progress");
+    const status = document.getElementById("login-status");
+    const errEl = document.getElementById("login-error");
+
+    btn.disabled = true;
+    errEl.style.display = "none";
+
+    function setProgress(pct, msg) {
+      progress.style.width = pct + "%";
+      status.textContent = msg;
+    }
+
+    setProgress(20, "verbinding maken...");
     const username = document.getElementById("login-user").value.trim();
     const password = document.getElementById("login-pass").value.trim();
-    const res = await fetch(`${BACKEND}/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
+
+    let data;
+    try {
+      setProgress(45, "gegevens controleren...");
+      const res = await fetch(`${BACKEND}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      setProgress(70, "account laden...");
+      data = await res.json();
+    } catch(e) {
+      setProgress(0, "");
+      status.textContent = "geen verbinding g";
+      btn.disabled = false;
+      return;
+    }
+
     if (data.success) {
+      setProgress(90, "bijna...");
       authToken = data.token;
       currentUsername = data.username;
       localStorage.setItem("token", authToken);
       localStorage.setItem("username", currentUsername);
-      document.getElementById("login-screen").style.display = "none";
       slots = data.slots;
       setPfp(data.pfp);
       if (data.isAdmin) document.getElementById("admin-link").style.display = "";
@@ -939,9 +970,19 @@
       switchSlot(1);
       initSocket();
       loadPersonas();
+      setProgress(100, "welkom g");
+      await new Promise(r => setTimeout(r, 400));
+      document.getElementById("login-screen").style.display = "none";
+      progress.style.transition = "none";
+      progress.style.width = "0%";
+      progress.style.transition = "width 0.4s ease";
+      status.textContent = "";
+      btn.disabled = false;
       checkOnboarding();
     } else {
-      document.getElementById("login-error").style.display = "block";
+      setProgress(0, "");
+      errEl.style.display = "block";
+      btn.disabled = false;
     }
   }
 
