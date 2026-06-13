@@ -877,6 +877,11 @@
   let slots = [];
   let socket = null;
 
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("message-input");
+  const imageInput = document.getElementById("image-input");
+  const imageName = document.getElementById("image-name");
+
   applyMode();
 
   if (authToken) {
@@ -1066,11 +1071,6 @@
     else if (pct < 80) bar.style.background = "#f5c842";
     else bar.style.background = "#e84040";
   }
-
-  const chat = document.getElementById("chat");
-  const input = document.getElementById("message-input");
-  const imageInput = document.getElementById("image-input");
-  const imageName = document.getElementById("image-name");
 
   imageInput.addEventListener("change", () => {
     imageName.textContent = imageInput.files[0]?.name || "";
