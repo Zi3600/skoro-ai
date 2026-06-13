@@ -729,11 +729,6 @@
   </div>
 </div>
 
-<div id="img-gen-area">
-  <input id="img-gen-input" placeholder="beschrijf wat ge wilt maken..." />
-  <button id="img-gen-btn" onclick="generateImage()">maak foto</button>
-</div>
-
 <div id="input-area">
   <div style="flex:1; display:flex; flex-direction:column;">
     <textarea id="message-input" rows="1" placeholder="vraag maar g"></textarea>
@@ -767,12 +762,38 @@
   // Mode
   const MODE_LABELS = { regular: "regulier", smart: "slim", morad: "wetenschappelijk", fastanswer: "FastAnswer" };
   let currentMode = localStorage.getItem("aiMode") || "regular";
+  let personaCache = {};
+  let currentPersonaData = null;
 
   function applyMode() {
-    document.getElementById("mode-badge").textContent = MODE_LABELS[currentMode] || "regulier";
-    const isImageGen = currentMode === "smart" || currentMode === "regular" || currentMode === "morad";
-    document.getElementById("img-gen-area").classList.toggle("show", isImageGen);
-    input.placeholder = currentMode === "fastanswer" ? "stuur een foto of stel een snelle vraag" : "vraag maar g";
+    if (currentMode.startsWith("persona:")) {
+      const pid = currentMode.slice(8);
+      const p = personaCache[pid];
+      document.getElementById("mode-badge").textContent = p ? p.name : "speciaal";
+      input.placeholder = "vraag maar g";
+      currentPersonaData = p || null;
+    } else {
+      document.getElementById("mode-badge").textContent = MODE_LABELS[currentMode] || "regulier";
+      input.placeholder = currentMode === "fastanswer" ? "stuur een foto of stel een snelle vraag" : "vraag maar g";
+      currentPersonaData = null;
+    }
+  }
+
+  async function loadPersonas() {
+    try {
+      const res = await fetch(`${BACKEND}/personas`, { headers: { "x-auth-token": authToken } });
+      if (!res.ok) return;
+      const data = await res.json();
+      data.personas.forEach(p => { personaCache[p.id] = p; });
+      applyMode();
+    } catch(e) {}
+  }
+
+  const IMAGE_GEN_KEYWORDS = ["maak een foto van", "maak een afbeelding van", "maak een plaatje van", "genereer een afbeelding", "genereer een foto", "maak afbeelding", "maak foto van"];
+
+  function wantsImageGen(msg) {
+    const lower = msg.toLowerCase();
+    return IMAGE_GEN_KEYWORDS.some(k => lower.includes(k));
   }
 
   // Onboarding
@@ -917,6 +938,7 @@
       renderSlots();
       switchSlot(1);
       initSocket();
+      loadPersonas();
       checkOnboarding();
     } else {
       document.getElementById("login-error").style.display = "block";
@@ -959,6 +981,7 @@
     switchSlot(1);
     updateBar(meData.pct ?? 0);
     initSocket();
+    loadPersonas();
   }
 
   function renderSlots() {
@@ -1089,7 +1112,7 @@
       wrapper.style.cssText = "display:flex; align-items:flex-start; gap:8px;";
 
       const avatar = document.createElement("img");
-      avatar.src = "morad.png";
+      avatar.src = (currentPersonaData && currentPersonaData.pfp) ? currentPersonaData.pfp : "morad.png";
       avatar.onerror = () => avatar.style.display = "none";
       avatar.style.cssText = "width:28px; height:28px; object-fit:cover; border:1px solid rgba(255,255,255,0.8); flex-shrink:0; margin-top:2px;";
 
@@ -1106,7 +1129,19 @@
 
     const div = document.createElement("div");
     div.className = `message ${role}`;
-    div.textContent = text;
+
+    // [foto] prefix means it was an image upload stored as text
+    if (text && text.startsWith("[foto]")) {
+      const label = document.createElement("span");
+      label.style.cssText = "font-size:0.7rem; opacity:0.6; display:block; margin-bottom:4px;";
+      label.textContent = "foto";
+      const rest = text.slice(6).trim();
+      div.appendChild(label);
+      if (rest) div.appendChild(document.createTextNode(rest));
+    } else {
+      div.textContent = text;
+    }
+
     if (imageSrc) {
       const img = document.createElement("img");
       img.src = imageSrc;
@@ -1129,6 +1164,34 @@
       return;
     }
 
+    // Image generation via keywords (skip if persona has it disabled)
+    if (message && wantsImageGen(message) && !imageInput.files[0] && (!currentPersonaData || currentPersonaData.canGenerateImages)) {
+      addMessage("user", message);
+      input.value = "";
+      const typing = addMessage("assistant", "aan het maken...");
+      typing.classList.add("typing");
+      try {
+        const res = await fetch(`${BACKEND}/generate-image`, {
+          method: "POST",
+          headers: { "x-auth-token": authToken, "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: message }),
+        });
+        const data = await res.json();
+        typing.classList.remove("typing");
+        if (data.url) {
+          typing.textContent = "";
+          const img = document.createElement("img");
+          img.src = data.url;
+          img.style.cssText = "max-width:100%; display:block; border:1px solid rgba(255,255,255,0.6);";
+          typing.appendChild(img);
+          if (data.pct !== undefined) updateBar(data.pct);
+        } else {
+          typing.textContent = data.error || "kon geen afbeelding maken";
+        }
+      } catch (e) { typing.textContent = "er ging iets mis"; }
+      return;
+    }
+
     const file = imageInput.files[0];
     const imageSrc = file ? URL.createObjectURL(file) : null;
     addMessage("user", message, imageSrc);
@@ -1143,7 +1206,11 @@
     const formData = new FormData();
     formData.append("message", message);
     formData.append("slotId", activeSlot);
-    formData.append("mode", currentMode);
+    if (currentMode.startsWith("persona:")) {
+      formData.append("personaId", currentMode.slice(8));
+    } else {
+      formData.append("mode", currentMode);
+    }
     if (file) formData.append("image", file);
 
     const res = await fetch(`${BACKEND}/chat`, { method: "POST", body: formData, headers: { "x-auth-token": authToken } });

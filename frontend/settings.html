@@ -116,8 +116,10 @@
 <div class="toast" id="toast"></div>
 
 <script>
+  const BACKEND = "https://skoro-ai.onrender.com";
   let selected = localStorage.getItem("aiMode") || "regular";
   highlight();
+  loadPersonas();
 
   function select(mode) {
     selected = mode;
@@ -128,6 +130,9 @@
     ["regular","smart","morad","fastanswer"].forEach(m => {
       document.getElementById("card-" + m).classList.toggle("selected", m === selected);
     });
+    document.querySelectorAll("[data-persona-card]").forEach(el => {
+      el.classList.toggle("selected", el.dataset.personaCard === selected);
+    });
   }
 
   function save() {
@@ -136,6 +141,43 @@
     t.textContent = "opgeslagen g";
     t.style.display = "block";
     setTimeout(() => { t.style.display = "none"; window.location.href = "index.html"; }, 1200);
+  }
+
+  async function loadPersonas() {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try {
+      const res = await fetch(`${BACKEND}/personas`, { headers: { "x-auth-token": token } });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.personas || !data.personas.length) return;
+
+      const container = document.querySelector(".container");
+      const saveBtn = container.querySelector(".save-btn");
+
+      const heading = document.createElement("h1");
+      heading.textContent = "speciale edities";
+      heading.style.marginTop = "8px";
+      container.insertBefore(heading, saveBtn);
+
+      data.personas.forEach(p => {
+        const modeKey = `persona:${p.id}`;
+        const card = document.createElement("div");
+        card.className = "mode-card" + (selected === modeKey ? " selected" : "");
+        card.dataset.personaCard = modeKey;
+        card.onclick = () => select(modeKey);
+        card.innerHTML = `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+            ${p.pfp ? `<img src="${p.pfp}" style="width:36px;height:36px;object-fit:cover;border:1px solid rgba(255,255,255,0.8);flex-shrink:0;">` : ""}
+            <h2 style="margin-bottom:0;">${p.name}</h2>
+          </div>
+          <p>${p.model === "gpt-4o" ? "slim model, meer credits" : "snel model, goedkoop"}${p.canGenerateImages ? " · kan afbeeldingen maken" : ""}</p>
+          <span class="cost-badge ${p.model === "gpt-4o" ? "cost-high" : "cost-low"}">${p.model === "gpt-4o" ? "meer credits" : "goedkoopst"}</span>`;
+        container.insertBefore(card, saveBtn);
+      });
+
+      highlight();
+    } catch(e) {}
   }
 </script>
 </body>

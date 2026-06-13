@@ -133,6 +133,104 @@
 
     .spend-bar-wrap { width: 80px; height: 5px; background: rgba(0,0,0,0.08); border: 1px solid rgba(255,255,255,0.6); }
     .spend-bar { height: 100%; background: #4cca6e; transition: width 0.4s, background 0.4s; }
+
+    .persona-row {
+      padding: 14px 0;
+      border-bottom: 1px solid rgba(100,180,240,0.15);
+    }
+    .persona-row:last-child { border-bottom: none; }
+
+    .persona-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .persona-pfp {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(180deg, rgba(180,225,255,0.9) 0%, rgba(90,170,230,0.85) 100%);
+      border: 2px solid rgba(255,255,255,0.85);
+      box-shadow: 0 2px 6px rgba(0,100,200,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .persona-pfp img { width: 48px; height: 48px; object-fit: cover; }
+
+    .persona-info { flex: 1; }
+    .persona-info strong { font-size: 0.9rem; color: #1a5a7a; display: block; }
+    .persona-info span { font-size: 0.72rem; color: #5a8aaa; }
+
+    .persona-edit-panel {
+      display: none;
+      margin-top: 12px;
+      padding: 14px;
+      background: rgba(220,245,255,0.5);
+      border: 1px solid rgba(100,180,240,0.2);
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .persona-edit-panel.open { display: flex; }
+
+    .field-group { display: flex; flex-direction: column; gap: 3px; }
+    .field-group label { font-size: 0.7rem; color: #4a8aaa; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .full-input {
+      padding: 7px 10px;
+      border: 1px solid rgba(100,180,240,0.6);
+      background: rgba(255,255,255,0.9);
+      font-family: Tahoma, sans-serif;
+      font-size: 0.78rem;
+      color: #1a3a4a;
+      width: 100%;
+    }
+
+    .full-input[type="range"] {
+      padding: 0;
+      height: 20px;
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+
+    textarea.full-input { resize: vertical; min-height: 80px; }
+
+    .inline-row { display: flex; flex-wrap: wrap; gap: 10px; }
+    .inline-row .field-group { flex: 1; min-width: 140px; }
+
+    .intelligence-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .intel-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.62rem;
+      color: #5a8aaa;
+      margin-top: 2px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: #1a5a7a;
+    }
+
+    .new-persona-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
   </style>
 </head>
 <body>
@@ -147,6 +245,59 @@
   <div class="card">
     <h2>gebruikers</h2>
     <div id="user-list">laden...</div>
+  </div>
+
+  <div class="card">
+    <h2>speciale AI edities</h2>
+    <div id="persona-list">laden...</div>
+  </div>
+
+  <div class="card">
+    <h2>nieuwe AI editie aanmaken</h2>
+    <div class="new-persona-form">
+      <div class="inline-row">
+        <div class="field-group">
+          <label>naam</label>
+          <input class="full-input" id="pnew-name" placeholder="bijv. Karima" />
+        </div>
+        <div class="field-group">
+          <label>intelligentie</label>
+          <select class="full-input" id="pnew-model">
+            <option value="gpt-4o-mini">snel — gpt-4o-mini</option>
+            <option value="gpt-4o">slim — gpt-4o</option>
+          </select>
+        </div>
+      </div>
+      <div class="inline-row">
+        <div class="field-group" style="flex:2;">
+          <label>max tokens (antwoordlengte): <span id="pnew-tokens-val">300</span></label>
+          <input type="range" class="full-input" id="pnew-tokens" min="80" max="1000" value="300" oninput="document.getElementById('pnew-tokens-val').textContent=this.value" />
+          <div class="intel-labels"><span>kort</span><span>lang</span></div>
+        </div>
+        <div class="field-group" style="justify-content:flex-end;">
+          <label>afbeeldingen maken</label>
+          <div class="toggle-row" style="margin-top:6px;">
+            <input type="checkbox" id="pnew-imggen" checked style="width:16px;height:16px;" />
+            <span>aan</span>
+          </div>
+        </div>
+      </div>
+      <div class="field-group">
+        <label>begroeting (zegt dit altijd aan het begin)</label>
+        <input class="full-input" id="pnew-greeting" placeholder='bijv. "salam daar {naam}, wat kan ik voor u doen?"' />
+      </div>
+      <div class="field-group">
+        <label>systeem prompt (karakter, toon, regels)</label>
+        <textarea class="full-input" id="pnew-systemprompt" placeholder="schrijf hier het karakter van de AI. bijv: Je bent Karima, een vriendelijke AI die altijd in het Nederlands antwoordt..."></textarea>
+      </div>
+      <div class="field-group">
+        <label>profielfoto</label>
+        <input type="file" id="pnew-pfp" accept="image/*" style="display:none;" />
+        <span class="pfp-label" onclick="document.getElementById('pnew-pfp').click()">foto kiezen</span>
+        <span id="pnew-pfp-name" style="font-size:0.68rem;color:#5a8aaa;margin-left:6px;"></span>
+      </div>
+      <button class="btn" onclick="createPersona()" style="align-self:flex-start;">aanmaken</button>
+    </div>
   </div>
 
   <div class="card">
@@ -186,6 +337,10 @@
 
   document.getElementById("new-pfp-file").addEventListener("change", (e) => {
     document.getElementById("new-pfp-name").textContent = e.target.files[0]?.name || "";
+  });
+
+  document.getElementById("pnew-pfp").addEventListener("change", (e) => {
+    document.getElementById("pnew-pfp-name").textContent = e.target.files[0]?.name || "";
   });
 
   function toast(msg) {
@@ -327,7 +482,162 @@
     loadUsers();
   }
 
+  async function loadPersonas() {
+    const res = await fetch(`${BACKEND}/admin/personas`, { headers: { "x-auth-token": token } });
+    if (!res.ok) return;
+    const data = await res.json();
+    renderPersonas(data.personas);
+  }
+
+  function renderPersonas(personas) {
+    const list = document.getElementById("persona-list");
+    if (!personas.length) { list.innerHTML = '<span style="font-size:0.78rem;color:#5a8aaa;">nog geen speciale edities aangemaakt.</span>'; return; }
+    list.innerHTML = "";
+    personas.forEach(p => {
+      const row = document.createElement("div");
+      row.className = "persona-row";
+      row.id = `persona-row-${p.id}`;
+      row.innerHTML = `
+        <div class="persona-header">
+          <div class="persona-pfp" id="ppfp-${p.id}">
+            ${p.pfp
+              ? `<img src="${p.pfp}" />`
+              : `<svg width="28" height="28" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="8" r="4" fill="rgba(255,255,255,0.85)"/><path d="M2 20c0-5 4-8 9-8s9 3 9 8" stroke="rgba(255,255,255,0.85)" stroke-width="2" fill="none" stroke-linecap="round"/></svg>`}
+          </div>
+          <div class="persona-info">
+            <strong>${p.name}</strong>
+            <span>${p.model === "gpt-4o" ? "slim (gpt-4o)" : "snel (gpt-4o-mini)"} &middot; ${p.maxTokens} tokens &middot; ${p.canGenerateImages ? "kan afbeeldingen maken" : "geen afbeeldingen"}</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            <button class="btn btn-small" onclick="togglePersonaEdit('${p.id}')">bewerken</button>
+            <button class="btn btn-small btn-red" onclick="deletePersona('${p.id}')">verwijder</button>
+          </div>
+        </div>
+        <div class="persona-edit-panel" id="pedit-${p.id}">
+          <div class="inline-row">
+            <div class="field-group">
+              <label>naam</label>
+              <input class="full-input" id="pname-${p.id}" value="${p.name}" />
+            </div>
+            <div class="field-group">
+              <label>intelligentie</label>
+              <select class="full-input" id="pmodel-${p.id}">
+                <option value="gpt-4o-mini" ${p.model === "gpt-4o-mini" ? "selected" : ""}>snel &mdash; gpt-4o-mini</option>
+                <option value="gpt-4o" ${p.model === "gpt-4o" ? "selected" : ""}>slim &mdash; gpt-4o</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-group">
+            <label>max tokens: <span id="ptokval-${p.id}">${p.maxTokens}</span></label>
+            <input type="range" class="full-input" id="ptok-${p.id}" min="80" max="1000" value="${p.maxTokens}" oninput="document.getElementById('ptokval-${p.id}').textContent=this.value" />
+            <div class="intel-labels"><span>kort</span><span>lang</span></div>
+          </div>
+          <div class="toggle-row">
+            <input type="checkbox" id="pimg-${p.id}" ${p.canGenerateImages ? "checked" : ""} style="width:16px;height:16px;" />
+            <label for="pimg-${p.id}" style="font-size:0.78rem;color:#1a5a7a;">afbeeldingen maken</label>
+          </div>
+          <div class="field-group">
+            <label>begroeting</label>
+            <input class="full-input" id="pgreet-${p.id}" value="${(p.greeting || "").replace(/"/g, "&quot;")}" />
+          </div>
+          <div class="field-group">
+            <label>systeem prompt</label>
+            <textarea class="full-input" id="psys-${p.id}">${p.systemPrompt || ""}</textarea>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button class="btn btn-small" onclick="savePersona('${p.id}')">opslaan</button>
+            <input type="file" id="ppfpfile-${p.id}" accept="image/*" style="display:none;" onchange="uploadPersonaPfp('${p.id}')" />
+            <span class="pfp-label" onclick="document.getElementById('ppfpfile-${p.id}').click()">pfp veranderen</span>
+          </div>
+        </div>`;
+      list.appendChild(row);
+    });
+  }
+
+  function togglePersonaEdit(id) {
+    document.getElementById(`pedit-${id}`).classList.toggle("open");
+  }
+
+  async function savePersona(id) {
+    const body = {
+      name: document.getElementById(`pname-${id}`).value.trim(),
+      model: document.getElementById(`pmodel-${id}`).value,
+      maxTokens: parseInt(document.getElementById(`ptok-${id}`).value),
+      canGenerateImages: document.getElementById(`pimg-${id}`).checked,
+      greeting: document.getElementById(`pgreet-${id}`).value.trim(),
+      systemPrompt: document.getElementById(`psys-${id}`).value.trim(),
+    };
+    await fetch(`${BACKEND}/admin/personas/${id}`, {
+      method: "PUT", headers: { "x-auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    toast(`${body.name} opgeslagen`);
+    loadPersonas();
+  }
+
+  async function uploadPersonaPfp(id) {
+    const file = document.getElementById(`ppfpfile-${id}`).files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("pfp", file);
+    const res = await fetch(`${BACKEND}/admin/personas/${id}/pfp`, {
+      method: "POST", headers: { "x-auth-token": token }, body: form,
+    });
+    const data = await res.json();
+    if (data.pfp) document.getElementById(`ppfp-${id}`).innerHTML = `<img src="${data.pfp}" />`;
+    toast("pfp bijgewerkt");
+  }
+
+  async function deletePersona(id) {
+    if (!confirm("deze AI editie verwijderen g?")) return;
+    await fetch(`${BACKEND}/admin/personas/${id}`, {
+      method: "DELETE", headers: { "x-auth-token": token },
+    });
+    toast("editie verwijderd");
+    loadPersonas();
+  }
+
+  async function createPersona() {
+    const name = document.getElementById("pnew-name").value.trim();
+    if (!name) return toast("naam verplicht g");
+    const body = {
+      name,
+      model: document.getElementById("pnew-model").value,
+      maxTokens: parseInt(document.getElementById("pnew-tokens").value),
+      canGenerateImages: document.getElementById("pnew-imggen").checked,
+      greeting: document.getElementById("pnew-greeting").value.trim(),
+      systemPrompt: document.getElementById("pnew-systemprompt").value.trim(),
+    };
+    const res = await fetch(`${BACKEND}/admin/personas`, {
+      method: "POST", headers: { "x-auth-token": token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!data.success) return toast(data.error || "fout");
+
+    const pfpFile = document.getElementById("pnew-pfp").files[0];
+    if (pfpFile && data.persona) {
+      const form = new FormData();
+      form.append("pfp", pfpFile);
+      await fetch(`${BACKEND}/admin/personas/${data.persona.id}/pfp`, {
+        method: "POST", headers: { "x-auth-token": token }, body: form,
+      });
+    }
+
+    toast(`${name} aangemaakt`);
+    document.getElementById("pnew-name").value = "";
+    document.getElementById("pnew-greeting").value = "";
+    document.getElementById("pnew-systemprompt").value = "";
+    document.getElementById("pnew-pfp").value = "";
+    document.getElementById("pnew-pfp-name").textContent = "";
+    document.getElementById("pnew-tokens").value = 300;
+    document.getElementById("pnew-tokens-val").textContent = "300";
+    document.getElementById("pnew-imggen").checked = true;
+    loadPersonas();
+  }
+
   loadUsers();
+  loadPersonas();
 </script>
 
 </body>

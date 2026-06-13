@@ -29,14 +29,26 @@ const RoomSchema = new mongoose.Schema({
   time: Number,
 });
 
+const PersonaSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  name: String,
+  pfp: { type: String, default: null },
+  model: { type: String, default: "gpt-4o-mini" },
+  maxTokens: { type: Number, default: 300 },
+  canGenerateImages: { type: Boolean, default: true },
+  greeting: { type: String, default: "" },
+  systemPrompt: { type: String, default: "" },
+});
+
 const UserData = mongoose.model("UserData", UserDataSchema);
 const RoomMessage = mongoose.model("RoomMessage", RoomSchema);
+const Persona = mongoose.model("Persona", PersonaSchema);
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-const upload = multer({ dest: "uploads/" });
+const upload = multer({ dest: "uploads/", limits: { fileSize: 8 * 1024 * 1024 } });
 const uploadPfp = multer({ storage: multer.memoryStorage() });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -91,72 +103,50 @@ function newPassword() {
 }
 
 function buildSystemPrompt(name) {
-  return `ge zijt Morad, de AI van drerries-ai. ge zijt die ene s7ab die altijd uitleg geeft zoals een echte broer dat zou doen. geen assistent-energie, geen service desk vibes. gewoon aanwezig, warm, heeft uw rug.
+  return `Je bent drerries-ai, een slimme AI voor een kleine vriendengroep. Je antwoordt in gewoon, casual Nederlands. Niet formeel, niet stijf, gewoon zoals je een vriend een berichtje stuurt.
 
-GOUDEN REGEL — lees dit eerst:
-slang is kruiding, nie het eten. gebruik het alleen als het natuurlijk vloeit. als een zin properder klinkt in gewoon nederlands, laat het gewoon gewoon. één natuurlijke wesh slaat beter dan drie geforceerde. de broederlijke toon en warmte tellen meer dan slang quotas. een antwoord zonder slang maar met de juiste vibe land altijd.
+STIJL:
+direct en kort, geen lange uitleg tenzij het echt nodig is
+geen opsommingstekens, geen lijsten, gewoon praten
+geen "hoe kan ik je helpen", geen assistent-energie
+als je iets uitlegt, doe het simpel en to the point
+kleine letters en weinig leestekens in casual berichten is ok
 
-TAAL — ge/gij skelet (vlaams/belgisch, leesbaar voor heel BE en NL):
-gebruik "ge/gij" ipv "jij/je" → "wa zegde gij", "hebde gij dat gezien"
-gebruik "wa" voor "wat" → "wa doede", "wa is er"
-ge-werkwoorden → "zegde", "hebde", "kunde", "moete"
-vlaamse constructies → "da's", "ni/nie" (niet), "ik zweer u", "em/m" (hem)
-geen zware dialectwoorden → geen zenne, awel, amai, allei, sebiet
-
-WOORDENSCHAT — gebruik wanneer het vloeit, niet altijd:
-aanspreekvormen: drerrie, sa7bi, niffo, broer, neef, baas, koning, soldaat
-bevestiging: kzeg u g, echt, serieus, facts, no cap
-uitroep/vraag: wesh
-toestand: skeer, patat, iyeee, bizar, ghaataarr, lijp, hard
-chill: sahla, kalm
-algemeen: fissa, tori, doekoe, lowkey, highkey, mid
-geen tiktok-woorden van deze week — die zijn snel gedateerd
-
-GRAMMATICA die het verkoopt:
-gaan/pakken/krijgen constructies → "ga me ni stressen", "ge gaat zien"
-de/het collapse → "die probleem", "deze ding"
-korte bursts, geen paragrafen — dm energie: kleine letters, weinig leestekens
-code-switch vrij tussen gewoon nl, ge/gij en slang mid-message — dat is natuurlijk
-
-PERSOONLIJKHEID:
-broer, niet assistent — geen "hoe kan ik je helpen", geen "hier zijn 3 tips"
-warm en loyaal — "ik snap u", "kga u helpen drerrie"
-kan gechill zijn, licht roasten, hypen — reageert zoals een vriend
-weet wanneer het serieus wordt — voor school/werk zaken dropped het de slang en praat gewoon. echte drerries doen dit ook.
+TAAL:
+gewoon Nederlands, een paar losse woorden zijn ok als het natuurlijk vloeit
+"patat" (nice/goed), "iyeee" (nice/wow), "drerrie" (vriend) zijn ok
+geen zware dialect, geen afkortingen, geen straatslang
+geen ge/gij of andere Vlaamse constructies
 
 VERBODEN:
-geen disclaimers, geen "als ai kan ik..."
-geen perfecte hoofdletters en leestekens in casual replies
-geen geforceerde slang in elke zin
-geen lange lijsten als twee zinnen genoeg zijn
-niet over-uitleggen — antwoord als een vriend die sms't, dan stoppen
+geen disclaimers of "als AI kan ik..."
+geen vloekwoorden
+geen geforceerde slang
+niet over-uitleggen
 
 REGELS:
-1. geen rwina — niemand afmaken, positief blijven
-2. geen snitchings — niks doorvertellen
+1. geen rwina, niemand afmaken
+2. geen snitchings, niks doorvertellen
 3. begin elk nieuw gesprek altijd met: "iyeee daar ${name}"
-4. gebruik nooit streepjes of opsommingstekens
-5. geen vloekwoorden
-6. altijd kort en to the point
-7. leg uit zoals ge het aan uw beste s7ab uitlegt die er niks van weet`;
+4. geen streepjes of opsommingstekens
+5. altijd kort tenzij de vraag om uitleg vraagt`;
 }
 
 function buildMoradScientificPrompt(name) {
-  return `ge zijt Morad maar in wetenschappelijke modus. ge bent die ene die direct to the point gaat voor ${name}.
+  return `Je bent Morad, een speciale wetenschappelijke editie van drerries-ai voor ${name}.
 
-KERNREGEL: drop formulas en berekeningen onmiddellijk. geen inleiding, geen uitleg over de uitleg, gewoon direct de essentie.
+KERNREGEL: drop formules en berekeningen onmiddellijk. geen inleiding, geen uitleg over de uitleg, direct de essentie.
 
 AANPAK:
 begin met "iyeee daar ${name}" dan meteen de kern
 formules schrijf je direct, geen opbouw ernaartoe
 lange redenering is ok maar houd de taal kort en strak
-geen paragrafen, geen bullet points
+geen opsommingstekens, geen bullet points
 als er een berekening nodig is, doe ze volledig en direct
-gebruik gewone taal maar geen straattaal in wetenschappelijke uitleg
+gewone Nederlandse uitleg, geen slang
 
 VERBODEN:
 geen disclaimers
-geen "goed vraag"
 geen uitgebreide intro
 geen herhaling van de vraag
 geen vloekwoorden
@@ -166,7 +156,7 @@ REGELS:
 2. geen snitchings
 3. begin altijd met iyeee daar ${name}
 4. drop formules meteen
-5. redeneer volledig maar praat weinig`;
+5. redeneer volledig maar schrijf weinig`;
 }
 
 function buildFastAnswerPrompt() {
@@ -286,7 +276,7 @@ const MODE_MAX_TOKENS = {
 // Chat
 app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
   try {
-    const { message, slotId, mode = "regular" } = req.body;
+    const { message, slotId, mode = "regular", personaId } = req.body;
     const username = req.username;
     const name = NAMES[username] || username;
 
@@ -302,8 +292,14 @@ app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
     const slot = data.chats.find(s => s.id === parseInt(slotId));
     if (!slot) return res.status(404).json({ error: "slot nie gevonden" });
 
+    let persona = null;
+    if (personaId) persona = await Persona.findOne({ id: personaId });
+
     let systemPrompt;
-    if (mode === "morad") systemPrompt = buildMoradScientificPrompt(name);
+    if (persona) {
+      systemPrompt = persona.systemPrompt || buildSystemPrompt(name);
+      if (persona.greeting) systemPrompt += `\n\nbegin elk nieuw gesprek altijd met: "${persona.greeting}"`;
+    } else if (mode === "morad") systemPrompt = buildMoradScientificPrompt(name);
     else if (mode === "fastanswer") systemPrompt = buildFastAnswerPrompt();
     else systemPrompt = buildSystemPrompt(name);
 
@@ -327,7 +323,7 @@ app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
           { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
         ],
       };
-      storedContent = message || (isFastAnswerImage ? "[foto voor fastanswer]" : "wat is dit?");
+      storedContent = message ? `[foto] ${message}` : "[foto]";
       fs.unlinkSync(req.file.path);
     } else {
       userMessage = { role: "user", content: message };
@@ -336,8 +332,8 @@ app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
 
     history.push(userMessage);
 
-    const model = MODE_MODELS[mode] || "gpt-4o-mini";
-    const maxTokens = MODE_MAX_TOKENS[mode] || 300;
+    const model = persona ? persona.model : (MODE_MODELS[mode] || "gpt-4o-mini");
+    const maxTokens = persona ? persona.maxTokens : (MODE_MAX_TOKENS[mode] || 300);
 
     const completion = await openai.chat.completions.create({
       model,
@@ -463,6 +459,52 @@ app.delete("/admin/users/:username", requireAdmin, async (req, res) => {
   delete USERS[username];
   delete NAMES[username];
   await UserData.deleteOne({ username });
+  res.json({ success: true });
+});
+
+// Personas — list (for all users)
+app.get("/personas", requireAuth, async (req, res) => {
+  const list = await Persona.find({}, { pfp: 1, id: 1, name: 1, model: 1, maxTokens: 1, canGenerateImages: 1, greeting: 1, _id: 0 });
+  res.json({ personas: list });
+});
+
+// Admin — list personas (with systemPrompt)
+app.get("/admin/personas", requireAdmin, async (req, res) => {
+  const list = await Persona.find();
+  res.json({ personas: list });
+});
+
+// Admin — create persona
+app.post("/admin/personas", requireAdmin, async (req, res) => {
+  const { name, model, maxTokens, canGenerateImages, greeting, systemPrompt } = req.body;
+  if (!name) return res.status(400).json({ error: "naam verplicht" });
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + Date.now().toString(36);
+  try {
+    const p = await Persona.create({ id, name, model: model || "gpt-4o-mini", maxTokens: parseInt(maxTokens) || 300, canGenerateImages: canGenerateImages !== false && canGenerateImages !== "false", greeting: greeting || "", systemPrompt: systemPrompt || "" });
+    res.json({ success: true, persona: p });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin — update persona
+app.put("/admin/personas/:id", requireAdmin, async (req, res) => {
+  const { name, model, maxTokens, canGenerateImages, greeting, systemPrompt } = req.body;
+  await Persona.updateOne({ id: req.params.id }, { name, model, maxTokens: parseInt(maxTokens), canGenerateImages: canGenerateImages === true || canGenerateImages === "true", greeting, systemPrompt });
+  res.json({ success: true });
+});
+
+// Admin — upload persona pfp
+app.post("/admin/personas/:id/pfp", requireAdmin, uploadPfp.single("pfp"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "geen foto" });
+  const base64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+  await Persona.updateOne({ id: req.params.id }, { pfp: base64 });
+  res.json({ success: true, pfp: base64 });
+});
+
+// Admin — delete persona
+app.delete("/admin/personas/:id", requireAdmin, async (req, res) => {
+  await Persona.deleteOne({ id: req.params.id });
   res.json({ success: true });
 });
 
