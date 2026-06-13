@@ -64,18 +64,31 @@
       flex-shrink: 0;
     }
 
-    #logout-btn {
-      font-size: 0.68rem;
-      color: #4a8aaa;
+    .nav-btn {
       background: none;
       border: none;
       cursor: pointer;
       font-family: Tahoma, sans-serif;
-      padding: 0;
-      text-shadow: none;
+      font-size: 0.78rem;
+      color: #1a5a7a;
+      text-align: left;
+      padding: 7px 10px;
+      width: 100%;
+      display: block;
+      text-decoration: none;
+      transition: background 0.12s;
     }
 
-    #logout-btn:hover { text-decoration: underline; }
+    .nav-btn:hover { background: rgba(100,180,240,0.15); }
+    .nav-btn.red { color: #c03030; }
+    .nav-btn.red:hover { background: rgba(220,80,80,0.1); }
+
+    #sidebar-mode-label {
+      font-size: 0.62rem;
+      color: #7aaabb;
+      padding: 0 10px 2px;
+      display: block;
+    }
 
     #credit-bar-wrap {
       padding: 5px 24px;
@@ -697,11 +710,6 @@
       </svg>
       <img id="pfp-img" src="" style="display:none; width:34px; height:34px; object-fit:cover;" />
     </div>
-    <button id="dark-btn" onclick="toggleDark()">●</button>
-    <button id="logout-btn" onclick="logout()">uitloggen</button>
-    <div id="mode-badge" onclick="window.location.href='settings.html'">regulier</div>
-    <small id="admin-link" style="display:none;"><a href="manage.html" style="color:#e84040; text-decoration:none; font-size:0.7rem; font-weight:700;">beheer</a></small>
-    <small><a href="dev.html" style="color:#4a8aaa; text-decoration:none; font-size:0.7rem; font-weight:400;">groep JDM</a></small>
   </div>
 </header>
 
@@ -718,6 +726,15 @@
     <hr>
     <div class="slot-row">
       <button id="room-btn" class="slot-btn" onclick="openRoom()">drerries</button>
+    </div>
+    <hr>
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      <a href="settings.html" class="nav-btn">⚙ instellingen</a>
+      <span id="sidebar-mode-label">regulier</span>
+      <button class="nav-btn" onclick="toggleDark()">● donker</button>
+      <a id="admin-link" href="manage.html" class="nav-btn" style="display:none;color:#c03030;">▲ beheer</a>
+      <a href="dev.html" class="nav-btn">groep JDM</a>
+      <button class="nav-btn red" onclick="logout()">uitloggen</button>
     </div>
     <div id="sidebar-ad">
       <div class="ad-label">advertentie</div>
@@ -770,14 +787,15 @@
   let currentPersonaData = null;
 
   function applyMode() {
+    const label = document.getElementById("sidebar-mode-label");
     if (currentMode.startsWith("persona:")) {
       const pid = currentMode.slice(8);
       const p = personaCache[pid];
-      document.getElementById("mode-badge").textContent = p ? p.name : "speciaal";
+      if (label) label.textContent = p ? p.name : "speciaal";
       input.placeholder = "vraag maar g";
       currentPersonaData = p || null;
     } else {
-      document.getElementById("mode-badge").textContent = MODE_LABELS[currentMode] || "regulier";
+      if (label) label.textContent = MODE_LABELS[currentMode] || "regulier";
       input.placeholder = currentMode === "fastanswer" ? "stuur een foto of stel een snelle vraag" : "vraag maar g";
       currentPersonaData = null;
     }
