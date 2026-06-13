@@ -66,6 +66,55 @@
       box-shadow: 0 0 0 2px #c8a200, 0 2px 14px rgba(200,150,0,0.25);
     }
     .mode-card.luxe h2 { color: #5a3a00; }
+
+    .avatar-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+      gap: 10px;
+    }
+
+    .av-opt {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+    }
+
+    .av-img {
+      width: 62px;
+      height: 62px;
+      border: 3px solid transparent;
+      box-shadow: 0 1px 6px rgba(0,100,200,0.12);
+      object-fit: cover;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      background: rgba(200,235,255,0.5);
+    }
+
+    .av-none {
+      width: 62px;
+      height: 62px;
+      border: 3px solid transparent;
+      box-shadow: 0 1px 6px rgba(0,100,200,0.12);
+      background: linear-gradient(180deg, rgba(255,255,255,0.7) 0%, rgba(200,235,255,0.6) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      color: #8ab0c0;
+    }
+
+    .av-opt.selected .av-img,
+    .av-opt.selected .av-none {
+      border-color: #3aaeee;
+      box-shadow: 0 0 0 2px #3aaeee, 0 2px 8px rgba(0,150,255,0.2);
+    }
+
+    .av-opt span {
+      font-size: 0.62rem;
+      color: #5a8aaa;
+    }
+
     .save-btn {
       padding: 10px 28px;
       background: linear-gradient(180deg, #7dd6f7 0%, #3aaeee 40%, #1a8fd4 100%);
@@ -115,6 +164,15 @@
     <span class="cost-badge cost-low">goedkoop</span>
   </div>
 
+  <h1 style="margin-top:8px;">AI avatar</h1>
+
+  <div class="avatar-grid" id="avatar-grid">
+    <div class="av-opt" id="av-opt-none" onclick="selectAvatar('')">
+      <div class="av-none">—</div>
+      <span>geen</span>
+    </div>
+  </div>
+
   <button class="save-btn" onclick="save()">opslaan</button>
 </div>
 
@@ -123,7 +181,45 @@
 <script>
   const BACKEND = "https://skoro-ai.onrender.com";
   let selected = localStorage.getItem("aiMode") || "regular";
+  let selectedAvatar = localStorage.getItem("aiAvatar") || "";
+
+  const AVATAR_COUNT = 12;
+
+  function buildAvatarGrid() {
+    const grid = document.getElementById("avatar-grid");
+    // highlight "geen" if nothing selected
+    document.getElementById("av-opt-none").classList.toggle("selected", selectedAvatar === "");
+
+    for (let i = 1; i <= AVATAR_COUNT; i++) {
+      const file = `ai-${i}.png`;
+      const opt = document.createElement("div");
+      opt.className = "av-opt" + (selectedAvatar === file ? " selected" : "");
+      opt.id = `av-opt-${i}`;
+      opt.onclick = () => selectAvatar(file);
+      const img = document.createElement("img");
+      img.src = file;
+      img.className = "av-img";
+      img.alt = `avatar ${i}`;
+      img.onerror = () => { opt.style.display = "none"; };
+      opt.appendChild(img);
+      grid.appendChild(opt);
+    }
+  }
+
+  function selectAvatar(file) {
+    selectedAvatar = file;
+    document.getElementById("av-opt-none").classList.toggle("selected", file === "");
+    for (let i = 1; i <= AVATAR_COUNT; i++) {
+      const el = document.getElementById(`av-opt-${i}`);
+      if (el) el.classList.toggle("selected", `ai-${i}.png` === file);
+    }
+    document.querySelectorAll("[data-persona-av]").forEach(el => {
+      el.classList.toggle("selected", el.dataset.personaAv === file);
+    });
+  }
+
   highlight();
+  buildAvatarGrid();
   loadPersonas();
 
   function select(mode) {
@@ -142,6 +238,8 @@
 
   function save() {
     localStorage.setItem("aiMode", selected);
+    if (selectedAvatar) localStorage.setItem("aiAvatar", selectedAvatar);
+    else localStorage.removeItem("aiAvatar");
     const t = document.getElementById("toast");
     t.textContent = "opgeslagen g";
     t.style.display = "block";

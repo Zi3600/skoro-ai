@@ -1153,8 +1153,15 @@
       wrapper.style.cssText = "display:flex; align-items:flex-start; gap:8px;";
 
       const avatar = document.createElement("img");
-      avatar.src = (currentPersonaData && currentPersonaData.pfp) ? currentPersonaData.pfp : "morad.png";
-      avatar.onerror = () => avatar.style.display = "none";
+      const avatarSrc = (currentPersonaData && currentPersonaData.pfp)
+        ? currentPersonaData.pfp
+        : (localStorage.getItem("aiAvatar") || "");
+      if (!avatarSrc) {
+        avatar.style.display = "none";
+      } else {
+        avatar.src = avatarSrc;
+        avatar.onerror = () => { avatar.style.display = "none"; };
+      }
       avatar.style.cssText = "width:28px; height:28px; object-fit:cover; border:1px solid rgba(255,255,255,0.8); flex-shrink:0; margin-top:2px;";
 
       const div = document.createElement("div");
