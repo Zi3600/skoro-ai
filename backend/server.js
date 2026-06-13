@@ -11,7 +11,9 @@ const path = require("path");
 
 dotenv.config();
 
-mongoose.connect(process.env.MONGODB_URI).then(() => console.log("MongoDB connected")).catch(e => console.error("MongoDB error:", e));
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => { console.log("MongoDB connected"); syncUsersFromDB(); })
+  .catch(e => console.error("MongoDB error:", e));
 
 // Schemas
 const UserDataSchema = new mongoose.Schema({
@@ -29,6 +31,12 @@ const RoomSchema = new mongoose.Schema({
   time: Number,
 });
 
+const UserAuthSchema = new mongoose.Schema({
+  username: { type: String, unique: true },
+  password: String,
+  displayName: String,
+});
+
 const PersonaSchema = new mongoose.Schema({
   id: { type: String, unique: true },
   name: String,
@@ -42,6 +50,7 @@ const PersonaSchema = new mongoose.Schema({
 
 const UserData = mongoose.model("UserData", UserDataSchema);
 const RoomMessage = mongoose.model("RoomMessage", RoomSchema);
+const UserAuth = mongoose.model("UserAuth", UserAuthSchema);
 const Persona = mongoose.model("Persona", PersonaSchema);
 
 const app = express();
@@ -74,6 +83,24 @@ const NAMES = {
 
 const tokens = {};
 const MAX_EURO = 2.0;
+
+async function syncUsersFromDB() {
+  try {
+    const dbUsers = await UserAuth.find();
+    if (!dbUsers.length) {
+      const seeds = Object.keys(USERS).map(u => ({ username: u, password: USERS[u], displayName: NAMES[u] || u }));
+      await UserAuth.insertMany(seeds, { ordered: false }).catch(() => {});
+    } else {
+      dbUsers.forEach(u => {
+        USERS[u.username] = u.password;
+        NAMES[u.username] = u.displayName;
+      });
+    }
+    console.log("users synced from DB:", Object.keys(USERS).join(", "));
+  } catch (e) {
+    console.error("syncUsersFromDB error:", e.message);
+  }
+}
 
 async function getUserData(username) {
   let data = await UserData.findOne({ username });
@@ -285,6 +312,7 @@ app.post("/chat", requireAuth, upload.single("image"), async (req, res) => {
     if (data.spend >= MAX_EURO) {
       const newPass = newPassword();
       USERS[username] = newPass;
+      await UserAuth.updateOne({ username }, { password: newPass }).catch(() => {});
       delete tokens[req.authToken];
       return res.json({ reply: "ge zit op uw limiet broeder, vraag een nieuw wachtwoord aan Zi3600", locked: true });
     }
@@ -404,20 +432,22 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
 });
 
 // Admin — change password
-app.post("/admin/users/:username/password", requireAdmin, (req, res) => {
+app.post("/admin/users/:username/password", requireAdmin, async (req, res) => {
   const { username } = req.params;
   const { password } = req.body;
   if (!USERS[username]) return res.status(404).json({ error: "user nie gevonden" });
   USERS[username] = password;
+  await UserAuth.updateOne({ username }, { password });
   res.json({ success: true });
 });
 
 // Admin — change display name
-app.post("/admin/users/:username/name", requireAdmin, (req, res) => {
+app.post("/admin/users/:username/name", requireAdmin, async (req, res) => {
   const { username } = req.params;
   const { name } = req.body;
   if (!USERS[username]) return res.status(404).json({ error: "user nie gevonden" });
   NAMES[username] = name;
+  await UserAuth.updateOne({ username }, { displayName: name });
   res.json({ success: true });
 });
 
@@ -442,12 +472,13 @@ app.post("/admin/users/:username/reset-spend", requireAdmin, async (req, res) =>
 });
 
 // Admin — create user
-app.post("/admin/users", requireAdmin, (req, res) => {
+app.post("/admin/users", requireAdmin, async (req, res) => {
   const { username, password, displayName } = req.body;
   if (!username || !password) return res.status(400).json({ error: "username en wachtwoord verplicht" });
   if (USERS[username]) return res.status(400).json({ error: "bestaat al g" });
   USERS[username] = password;
   NAMES[username] = displayName || username;
+  await UserAuth.create({ username, password, displayName: displayName || username }).catch(() => {});
   res.json({ success: true });
 });
 
@@ -459,6 +490,7 @@ app.delete("/admin/users/:username", requireAdmin, async (req, res) => {
   delete USERS[username];
   delete NAMES[username];
   await UserData.deleteOne({ username });
+  await UserAuth.deleteOne({ username });
   res.json({ success: true });
 });
 

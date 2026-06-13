@@ -87,26 +87,14 @@
   <h1>kies jouw AI modus</h1>
 
   <div class="mode-card" id="card-regular" onclick="select('regular')">
-    <h2>Morad — regulier</h2>
-    <p>de normale Morad. casual, warm, legt alles uit zoals een goede s7ab. voor alles.</p>
+    <h2>regulier</h2>
+    <p>gewone chat. casual, warm, legt alles uit. voor alles wat ge nodig hebt.</p>
     <span class="cost-badge cost-low">goedkoopst</span>
-  </div>
-
-  <div class="mode-card" id="card-smart" onclick="select('smart')">
-    <h2>Morad — extra intelligentie</h2>
-    <p>zelfde Morad maar op een véél slimmer model. voor complexe uitleg, diepgaande vragen of als ge wilt dat het echt goed is. gebruikt meer credits.</p>
-    <span class="cost-badge cost-high">veel meer credits</span>
-  </div>
-
-  <div class="mode-card" id="card-morad" onclick="select('morad')">
-    <h2>Morad — wetenschappelijk</h2>
-    <p>Morad in wetenschappelijke modus. gooit direct formules en berekeningen, lange redenering maar korte chat. perfect voor exacte vakken, wiskunde, fysica, scheikunde. geen fluff, direct de essentie.</p>
-    <span class="cost-badge cost-high">meer credits</span>
   </div>
 
   <div class="mode-card" id="card-fastanswer" onclick="select('fastanswer')">
     <h2>FastAnswer</h2>
-    <p>razendsnel. stuur een foto van je huiswerk en krijg direct de antwoorden op het originele beeld. geen uitleg, geen omwegen, gewoon de antwoorden. werkt op oefeningen, invulopdrachten, meerkeuzevragen en berekeningen. let op: antwoordt alleen op wat het letterlijk ziet, hallucineert nooit.</p>
+    <p>razendsnel. stuur een foto van je huiswerk en krijg direct de antwoorden op het originele beeld. geen uitleg, geen omwegen, gewoon de antwoorden. werkt op oefeningen, invulopdrachten, meerkeuzevragen en berekeningen.</p>
     <span class="cost-badge cost-low">goedkoop</span>
   </div>
 
@@ -127,7 +115,7 @@
   }
 
   function highlight() {
-    ["regular","smart","morad","fastanswer"].forEach(m => {
+    ["regular","fastanswer"].forEach(m => {
       document.getElementById("card-" + m).classList.toggle("selected", m === selected);
     });
     document.querySelectorAll("[data-persona-card]").forEach(el => {
