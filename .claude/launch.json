@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "skoro-ai backend",
+      "name": "drerries-ai",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["server.js"],
+      "runtimeArgs": ["dev-local.js"],
       "cwd": "backend",
       "port": 3000
     }

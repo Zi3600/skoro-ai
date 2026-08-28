@@ -1,0 +1,40 @@
+EIGEN ICONEN IN PLAATS VAN EMOJI'S
+==================================
+
+Zet hier een afbeelding met de naam van een slot, en die vervangt automatisch
+de emoji in de hele app. Je hoeft niks in de code aan te passen.
+
+Werkt met: .png  .svg  .webp  .jpg  .jpeg  .gif  .avif
+Aanrader:  vierkante PNG of SVG, 64x64 of groter, transparante achtergrond.
+
+Voorbeeld: zet "straat.png" in deze map -> het 🛣️ icoon wordt jouw plaatje.
+Je hoeft niet alle slots te vullen. Wat je niet invult blijft gewoon de emoji.
+
+
+SLOTS
+-----
+
+  straat          🛣️   de straat, in het menu
+  archief         🗂️   archief, in het menu en bij de lege staat
+  groepen         👥   lege staat bij groepen
+  nieuwe-groep    ＋    "maak je groep"
+  code            🔑   "met code erbij"
+  maes            ✦    Maes-AI, in het menu, de callout en de lege staat
+  chat            💬   publieke chat op de straat + lege staat groepchat
+  instellingen    ⚙    instellingen
+  beheer          🛠   beheer (zien enkel beheerders)
+  uitloggen       ⇥    uitloggen
+
+  tekenen         ✏️   penseel in de straat-toolbar
+  typen           T    tekst plaatsen in de straat-toolbar
+  ongedaan        ↶    ongedaan maken
+  leegmaken       🗑   straat leegmaken (enkel beheerders)
+
+  afbeelding      🖼   foto sturen in een chat
+  bestand         📎   bestand sturen + het icoon bij een verstuurd bestand
+
+
+NA HET TOEVOEGEN
+----------------
+De server leest deze map uit bij elke keer dat iemand de app opent.
+Gewoon de pagina verversen is genoeg, herstarten hoeft niet.

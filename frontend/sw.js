@@ -1,10 +1,13 @@
-const CACHE = "drerries-v1";
+const CACHE = "drerries-v2";
 
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE).then(cache => cache.addAll([
       "/",
       "/index.html",
+      "/app.html",
+      "/app.css",
+      "/app.js",
       "/manifest.json",
       "/icon-192.png",
       "/icon-512.png",

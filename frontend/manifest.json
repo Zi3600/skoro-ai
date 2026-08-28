@@ -1,11 +1,11 @@
 {
   "name": "drerries-ai",
   "short_name": "drerries",
-  "description": "uw eigen AI sa7bi",
+  "description": "de straat, je groepen en Maes-AI",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#a8e4f7",
-  "theme_color": "#1a8fd4",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "orientation": "portrait",
   "icons": [
     {

@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>drerries-ai</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1a8fd4" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="drerries" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+
+<div id="scrim" onclick="closeSidebar()"></div>
+
+<div id="shell">
+
+  <!-- ------------------------------ sidebar ------------------------------ -->
+  <aside id="sidebar">
+    <div class="sb-head">
+      <div class="sb-avatar" id="me-av">?</div>
+      <div class="sb-who">
+        <strong id="me-name">...</strong>
+        <span id="me-sub">drerries-ai</span>
+      </div>
+    </div>
+
+    <div class="sb-scroll">
+      <div class="sb-label">school</div>
+      <button class="sb-item" data-route="straat" onclick="go('#/straat')">
+        <span class="ico" data-icon="straat">🛣️</span><span class="txt">de straat</span><span class="pill" id="straat-live" hidden>live</span>
+      </button>
+      <button class="sb-item" data-route="archief" onclick="go('#/archief')">
+        <span class="ico" data-icon="archief">🗂️</span><span class="txt">archief</span>
+      </button>
+
+      <div class="sb-label">groepen</div>
+      <div id="sb-groups"></div>
+      <button class="sb-item" onclick="go('#/groepen')">
+        <span class="ico" data-icon="nieuwe-groep">＋</span><span class="txt">maak je groep</span>
+      </button>
+
+      <div class="sb-label">ai</div>
+      <button class="sb-item" data-route="maes" onclick="go('#/maes')">
+        <span class="ico" data-icon="maes">✦</span><span class="txt">Maes-AI</span>
+      </button>
+
+      <div class="sb-label">meer</div>
+      <button class="sb-item" data-route="instellingen" onclick="go('#/instellingen')">
+        <span class="ico" data-icon="instellingen">⚙</span><span class="txt">instellingen</span>
+      </button>
+      <button class="sb-item" data-route="beheer" id="sb-beheer" hidden onclick="go('#/beheer')">
+        <span class="ico" data-icon="beheer">🛠</span><span class="txt">beheer</span>
+      </button>
+      <button class="sb-item" onclick="logout()">
+        <span class="ico" data-icon="uitloggen">⇥</span><span class="txt">uitloggen</span>
+      </button>
+    </div>
+
+    <div class="sb-foot">
+      <div class="credit">
+        <div class="credit-top">
+          <span>Maes-AI krediet</span>
+          <b id="credit-label">–</b>
+        </div>
+        <div class="credit-track"><div class="credit-bar" id="credit-bar"></div></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- -------------------------------- main -------------------------------- -->
+  <main id="main">
+    <div class="topbar">
+      <button id="burger" class="btn ghost icon" onclick="openSidebar()">☰</button>
+      <div class="crumb" id="crumb"></div>
+      <div class="spacer"></div>
+      <div id="topbar-actions"></div>
+    </div>
+
+    <!-- ---------------------------- de straat ---------------------------- -->
+    <section class="view" id="v-straat" hidden>
+      <div class="page">
+        <div class="straat-head">
+          <div>
+            <h1 class="title">de straat</h1>
+            <p class="lead" id="straat-sub">het whiteboard van vandaag. iedereen tekent en typt hier live mee. morgen begint een nieuwe en gaat deze naar het archief.</p>
+          </div>
+          <div class="presence" id="presence"></div>
+        </div>
+
+        <div class="toolbar" id="straat-toolbar">
+          <button class="tool on" id="tool-pen" onclick="setTool('pen')"><span class="ico" data-icon="tekenen">✏️</span> tekenen</button>
+          <button class="tool" id="tool-text" onclick="setTool('text')"><span class="ico" data-icon="typen">T</span> typen</button>
+          <span class="div"></span>
+          <span id="swatches"></span>
+          <span class="div"></span>
+          <span class="sizes" id="sizes"></span>
+          <span class="div"></span>
+          <button class="tool" onclick="undoMine()" title="maak je laatste toevoeging ongedaan"><span class="ico" data-icon="ongedaan">↶</span> ongedaan</button>
+          <button class="tool" id="clear-tool" hidden onclick="clearStraat()"><span class="ico" data-icon="leegmaken">🗑</span> leegmaken</button>
+        </div>
+
+        <div class="straat-layout">
+          <div class="straat-board">
+            <div class="canvas-wrap" id="canvas-wrap">
+              <canvas id="straat-canvas" width="1600" height="900"></canvas>
+              <div id="text-caret">
+                <input id="text-input" placeholder="typ en druk enter" />
+                <div class="hint">enter = plaatsen · esc = annuleren</div>
+              </div>
+            </div>
+
+            <div class="straat-foot">
+              <span id="straat-count">–</span>
+              <span id="straat-contribs"></span>
+            </div>
+          </div>
+
+          <!-- publieke chat van de straat -->
+          <aside class="straat-chat" id="straat-chat">
+            <div class="sc-head">
+              <span class="ico" data-icon="chat">💬</span>
+              <strong>publieke chat</strong>
+              <span class="tag" id="sc-count"></span>
+            </div>
+            <div class="sc-scroll" id="sc-messages"></div>
+            <div class="sc-typing" id="sc-typing"></div>
+            <div class="sc-composer">
+              <textarea id="sc-input" rows="1" placeholder="zeg iets tegen iedereen..."></textarea>
+              <button class="btn primary sm" onclick="sendStraatChat()">stuur</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ----------------------------- archief ----------------------------- -->
+    <section class="view" id="v-archief" hidden>
+      <div class="page">
+        <h1 class="title">archief</h1>
+        <p class="lead">elke dag op de straat wordt hier bewaard.</p>
+        <div class="arch-grid" id="arch-grid"></div>
+        <div class="empty" id="arch-empty" hidden><span class="big" data-icon="archief">🗂️</span>nog niks in het archief</div>
+      </div>
+    </section>
+
+    <!-- --------------------------- archiefdag ---------------------------- -->
+    <section class="view" id="v-archiefdag" hidden>
+      <div class="page">
+        <h1 class="title" id="ad-title">–</h1>
+        <p class="lead" id="ad-sub"></p>
+        <div class="canvas-wrap readonly" style="margin-top:18px;">
+          <canvas id="ad-canvas" width="1600" height="900"></canvas>
+        </div>
+        <div class="straat-foot"><span id="ad-count"></span><span id="ad-contribs"></span></div>
+      </div>
+    </section>
+
+    <!-- ----------------------------- groepen ----------------------------- -->
+    <section class="view" id="v-groepen" hidden>
+      <div class="page">
+        <h1 class="title">groepen</h1>
+        <p class="lead">maak je eigen ruimte om te chatten, foto's te delen en Maes-AI erbij te halen.</p>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:20px;">
+          <button class="btn primary" onclick="openModal('new-group')"><span class="ico" data-icon="nieuwe-groep">＋</span> maak je groep</button>
+          <button class="btn" onclick="openModal('join-group')"><span class="ico" data-icon="code">🔑</span> met code erbij</button>
+        </div>
+
+        <h2 class="sect">jouw groepen</h2>
+        <div class="grp-grid" id="grp-grid"></div>
+        <div class="empty" id="grp-empty" hidden><span class="big" data-icon="groepen">👥</span>je zit nog in geen enkele groep</div>
+      </div>
+    </section>
+
+    <!-- ---------------------------- groepchat ---------------------------- -->
+    <section class="view chat-view" id="v-groep" hidden>
+      <div class="chat-scroll" id="grp-scroll">
+        <div class="chat-inner" id="grp-messages"></div>
+      </div>
+      <div class="typing-line" id="grp-typing"></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <div class="pending" id="grp-pending" hidden>
+            <span id="grp-pending-name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+            <button class="btn ghost sm" onclick="clearPending()">×</button>
+          </div>
+          <div class="composer-box">
+            <textarea id="grp-input" rows="1" placeholder="bericht aan de groep..."></textarea>
+            <button class="btn ghost icon" onclick="pickUpload('image')" title="afbeelding, max 5 MB"><span class="ico" data-icon="afbeelding">🖼</span></button>
+            <button class="btn ghost icon" onclick="pickUpload('file')" title="bestand, max 20 MB"><span class="ico" data-icon="bestand">📎</span></button>
+            <button class="btn primary sm" onclick="sendGroupMessage()">stuur</button>
+          </div>
+          <div class="composer-hint">
+            <span><code>/Maes</code> roept Maes-AI op in deze chat</span>
+            <span>afbeeldingen tot 5 MB · bestanden tot 20 MB</span>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="up-image" accept="image/*" hidden />
+      <input type="file" id="up-file" hidden />
+    </section>
+
+    <!-- ----------------------------- Maes-AI ----------------------------- -->
+    <section class="view chat-view" id="v-maes" hidden>
+      <div class="chat-scroll" id="maes-scroll">
+        <div class="chat-inner">
+          <div id="maes-notice-slot"></div>
+          <div id="maes-messages"></div>
+        </div>
+      </div>
+      <div class="typing-line" id="maes-typing"></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <div class="pending" id="maes-pending" hidden>
+            <span id="maes-pending-name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+            <button class="btn ghost sm" onclick="clearMaesImage()">×</button>
+          </div>
+          <div class="composer-box">
+            <textarea id="maes-input" rows="1" placeholder="vraag iets aan Maes-AI..."></textarea>
+            <button class="btn ghost icon" onclick="document.getElementById('maes-image').click()" title="stuur een foto"><span class="ico" data-icon="afbeelding">🖼</span></button>
+            <button class="btn primary sm" onclick="sendMaes()">stuur</button>
+          </div>
+          <div class="composer-hint">
+            <span>chat <select id="maes-slot" class="btn sm" style="padding:2px 6px;" onchange="switchSlot(this.value)"></select></span>
+            <span>modus <select id="maes-mode" class="btn sm" style="padding:2px 6px;">
+              <option value="regular">gewoon</option>
+              <option value="studie">studie</option>
+              <option value="smart">slim</option>
+            </select></span>
+            <button class="btn ghost sm" onclick="clearSlot()">chat leegmaken</button>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="maes-image" accept="image/*" hidden />
+    </section>
+
+    <!-- --------------------------- instellingen --------------------------- -->
+    <section class="view" id="v-instellingen" hidden>
+      <div class="page">
+        <h1 class="title">instellingen</h1>
+
+        <h2 class="sect">weergave</h2>
+        <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:14px;">
+          <div><div style="font-weight:500;">donkere modus</div>
+            <div style="font-size:13px;color:var(--text-muted);">rustiger voor je ogen 's avonds</div></div>
+          <button class="btn" id="theme-btn" onclick="toggleTheme()">aanzetten</button>
+        </div>
+
+        <h2 class="sect">profielfoto</h2>
+        <div class="card" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+          <div class="sb-avatar" id="settings-av" style="width:52px;height:52px;font-size:20px;border-radius:8px;">?</div>
+          <div style="flex:1;min-width:160px;">
+            <div style="font-weight:500;" id="settings-name">–</div>
+            <div style="font-size:13px;color:var(--text-muted);" id="settings-user">–</div>
+          </div>
+          <button class="btn" onclick="document.getElementById('pfp-input').click()">foto kiezen</button>
+          <input type="file" id="pfp-input" accept="image/*" hidden />
+        </div>
+
+        <h2 class="sect">krediet</h2>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;font-size:14px;">
+            <span>gebruikt van je limiet</span><b id="settings-credit">–</b>
+          </div>
+          <div class="credit-track" style="margin-top:9px;"><div class="credit-bar" id="settings-bar"></div></div>
+          <p style="font-size:13px;color:var(--text-muted);margin-top:10px;">
+            elke student krijgt 25 cent aan Maes-AI. is je krediet op, dan zet de beheerder het terug op nul.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------------ beheer ------------------------------ -->
+    <section class="view" id="v-beheer" hidden>
+      <div class="page">
+        <h1 class="title">beheer</h1>
+        <p class="lead">vul per student de naam en het wachtwoord in. wijzigingen slaan op zodra je het veld verlaat.</p>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
+          <button class="btn" onclick="resetAllSpend()">alle kredieten resetten</button>
+          <button class="btn" onclick="loadAdmin()">vernieuwen</button>
+        </div>
+
+        <table class="tbl">
+          <thead>
+            <tr><th style="width:96px;">login</th><th>naam</th><th style="width:150px;">wachtwoord</th>
+                <th style="width:150px;">krediet</th><th style="width:80px;"></th></tr>
+          </thead>
+          <tbody id="admin-rows"></tbody>
+        </table>
+
+        <h2 class="sect">inlogscherm</h2>
+        <p class="lead">jij bepaalt wat er links op het inlogscherm staat. leeg laten mag ook.</p>
+        <div class="card" style="margin-top:12px;">
+          <div style="display:grid; gap:12px; grid-template-columns: minmax(0,1fr) 230px; align-items:start;">
+            <div>
+              <label class="fld-label" for="ls-title">titel</label>
+              <input id="ls-title" class="input" maxlength="80" placeholder="bv. klas 6A" />
+
+              <label class="fld-label" for="ls-text" style="margin-top:10px;">tekst</label>
+              <textarea id="ls-text" class="input" rows="4" maxlength="400"
+                placeholder="wat je wil dat iedereen ziet voor ze inloggen"></textarea>
+
+              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+                <button class="btn primary" onclick="saveLoginScreen()">opslaan</button>
+                <button class="btn" onclick="document.getElementById('ls-image').click()">afbeelding kiezen</button>
+                <button class="btn danger" onclick="clearLoginImage()">afbeelding weg</button>
+                <input type="file" id="ls-image" accept="image/*" hidden />
+              </div>
+              <p style="font-size:11.5px;color:var(--text-faint);margin-top:9px;">
+                afbeelding max 5 MB. laat alles leeg voor een leeg scherm.
+              </p>
+            </div>
+
+            <div>
+              <div class="fld-label">voorbeeld</div>
+              <div class="ls-preview" id="ls-preview">
+                <div class="ls-preview-img" id="ls-preview-img" hidden></div>
+                <strong id="ls-preview-title"></strong>
+                <span id="ls-preview-text"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h2 class="sect">opslag</h2>
+        <p class="lead">alle foto's en bestanden staan in MongoDB, dus ze overleven een deploy of herstart.</p>
+        <div class="card" style="margin-top:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:13px;">
+            <span id="st-label">–</span><b id="st-pct">–</b>
+          </div>
+          <div class="credit-track" style="margin-top:9px;"><div class="credit-bar" id="st-bar"></div></div>
+          <div id="st-groups" style="margin-top:12px;"></div>
+        </div>
+
+        <h2 class="sect">groepen</h2>
+        <div id="admin-groups"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ------------------------------- modals ------------------------------- -->
+<div class="modal-back" id="modal-new-group">
+  <div class="modal">
+    <h3>maak je groep</h3>
+    <p>je krijgt een eigen ruimte om te chatten en bestanden te delen.</p>
+    <input class="input" id="new-group-name" placeholder="naam van je groep" maxlength="40" />
+    <div class="row">
+      <button class="btn ghost" onclick="closeModal()">annuleren</button>
+      <button class="btn primary" onclick="createGroup()">maken</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="modal-join-group">
+  <div class="modal">
+    <h3>bij een groep</h3>
+    <p>vul de code in die je van iemand uit de groep kreeg.</p>
+    <input class="input" id="join-code" placeholder="bv. A1F3C9" maxlength="12" style="text-transform:uppercase;letter-spacing:0.1em;" />
+    <div class="row">
+      <button class="btn ghost" onclick="closeModal()">annuleren</button>
+      <button class="btn primary" onclick="joinGroup()">meedoen</button>
+    </div>
+  </div>
+</div>
+
+<div id="lightbox" onclick="this.classList.remove('on')"><img id="lightbox-img" src="" alt="" /></div>
+<div class="toast" id="toast"></div>
+
+<script src="socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
