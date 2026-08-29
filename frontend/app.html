@@ -256,6 +256,16 @@
           </div>
         </div>
 
+        <!-- spiekbriefje: Maes-AI vraagt om een "titel", jij weet dat dat <h1> is -->
+        <div class="spiek-balk">
+          <span class="ico" data-icon="spiek">📋</span>
+          <div>
+            <strong>spiekbriefje</strong>
+            <span>de opdracht vraagt om een <em>titel</em> of een <em>beschrijving</em> — hier staat welke tag daarbij hoort</span>
+          </div>
+          <button class="btn" onclick="openSpiek()">openen</button>
+        </div>
+
         <!-- de dagelijkse heist -->
         <div class="card heist-daily" id="daily-card">
           <div class="hd-top">
@@ -280,6 +290,7 @@
             <strong id="werk-titel">–</strong>
             <span class="spacer"></span>
             <span class="tag" id="werk-tag"></span>
+            <button class="btn ghost sm" onclick="openSpiek()">spiekbriefje</button>
             <button class="btn ghost sm" onclick="sluitWerk()">sluiten</button>
           </div>
           <p class="lead" id="werk-uitleg"></p>
@@ -425,6 +436,15 @@
       <button class="btn ghost" onclick="closeModal()">annuleren</button>
       <button class="btn primary" onclick="createGroup()">maken</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-back" id="modal-spiek">
+  <div class="modal spiek-modal">
+    <h3>spiekbriefje</h3>
+    <p>De opdracht spreekt in gewone woorden. Hier staat welke tag daarbij hoort.</p>
+    <div id="spiek-inhoud"></div>
+    <div class="row"><button class="btn ghost" onclick="closeModal()">sluiten</button></div>
   </div>
 </div>
 

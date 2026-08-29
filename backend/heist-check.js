@@ -76,7 +76,23 @@ function controleer(eisen, html, css) {
         case "tag": {
           let els = wortel.querySelectorAll(eis.tag);
           if (eis.nietLeeg) els = els.filter(el => el.text.trim().length > 0);
+          if (eis.minTekens) els = els.filter(el => el.text.trim().length >= eis.minTekens);
           ok = els.length >= (eis.minAantal || 1);
+          break;
+        }
+        // een bepaald element moet een bepaald woord bevatten
+        case "tagTekst": {
+          const zoek = String(eis.tekst).toLowerCase();
+          ok = wortel.querySelectorAll(eis.tag)
+            .some(el => el.text.toLowerCase().includes(zoek));
+          break;
+        }
+        // twee verschillende elementen van hetzelfde soort met verschillende tekst
+        case "verschillend": {
+          const teksten = wortel.querySelectorAll(eis.tag)
+            .map(el => el.text.trim().toLowerCase())
+            .filter(t => t.length > 0);
+          ok = new Set(teksten).size >= (eis.minAantal || 2);
           break;
         }
         case "attr": {
@@ -109,6 +125,18 @@ function controleer(eisen, html, css) {
         }
         case "geenRuwe": {
           ok = !h.toLowerCase().includes(String(eis.patroon).toLowerCase());
+          break;
+        }
+        /* Telt hoe vaak iets letterlijk in de broncode staat. Nodig voor
+           opdrachten over sluittags: een HTML-parser repareert een vergeten
+           </p> stilletjes, dus in de geparste boom is er niks meer mis.
+           Alleen de ruwe tekst laat zien of de leerling het echt gesloten heeft. */
+        case "ruweTelling": {
+          const naald = String(eis.patroon).toLowerCase();
+          let n = 0, i = 0;
+          const hooi = h.toLowerCase();
+          while ((i = hooi.indexOf(naald, i)) !== -1) { n++; i += naald.length; }
+          ok = n >= (eis.minAantal || 1);
           break;
         }
         default:

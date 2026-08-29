@@ -9,7 +9,8 @@ const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 const path = require("path");
 const crypto = require("crypto");
-const { LEVELS, DAILY } = require("./heist-content");
+const { LEVELS } = require("./heist-content");
+const { DAILY, SPIEK } = require("./heist-daily");
 const { controleer } = require("./heist-check");
 
 dotenv.config();
@@ -1094,21 +1095,61 @@ function heistVan(data) {
   return data.heist;
 }
 
-/* Iedereen krijgt dezelfde heist op dezelfde dag. We tellen het aantal dagen
-   sinds 1970 en lopen de lijst netjes rond. Niet met een hash over de datum:
-   dat gaf tweemaal dezelfde heist op twee dagen na elkaar (29 -> 30 verandert
-   de tekensom met precies 8, en de lijst is 8 lang) en een scheve verdeling.
-   Met een dagteller komt elke heist exact even vaak aan de beurt. */
-function heistVanVandaag(datum) {
+/* De volgorde waarin de heists langskomen.
+
+   Twee dingen tegelijk: het moet oplopen in moeilijkheid (eerst één ding,
+   later een hele pagina), maar binnen een niveau mag het niet de volgorde
+   van het bestand zijn — anders weet iedereen na een week wat er komt.
+
+   Dus: sorteer op niveau, en husselt binnen elk niveau met een vaste seed.
+   Vast, want iedereen moet op dezelfde dag dezelfde heist krijgen, en na
+   een herstart van de server moet het nog steeds kloppen. */
+function husselVast(lijst, seed) {
+  const uit = lijst.slice();
+  let s = seed;
+  const random = () => {
+    // kleine deterministische generator (mulberry32)
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = uit.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [uit[i], uit[j]] = [uit[j], uit[i]];
+  }
+  return uit;
+}
+
+const HEIST_VOLGORDE = (() => {
+  const perNiveau = {};
+  for (const h of DAILY) (perNiveau[h.niveau || 1] ||= []).push(h);
+  return Object.keys(perNiveau)
+    .map(Number).sort((a, b) => a - b)
+    .flatMap(n => husselVast(perNiveau[n], 1000 + n * 77));
+})();
+
+/* Vanaf welke dag de reeks begint. Zonder dit ankerpunt valt de eerste
+   schooldag ergens midden in de cyclus en beginnen de leerlingen meteen
+   bij de moeilijke opdrachten. Met het anker start dag één op niveau 1. */
+const HEIST_START = process.env.HEIST_START || "2026-08-29";
+
+function dagNummer(datum) {
   const [j, m, d] = String(datum).split("-").map(Number);
-  const dagen = Math.floor(Date.UTC(j, m - 1, d) / 86400000);
-  return DAILY[((dagen % DAILY.length) + DAILY.length) % DAILY.length];
+  return Math.floor(Date.UTC(j, m - 1, d) / 86400000);
+}
+
+// iedereen krijgt dezelfde heist op dezelfde dag; de cyclus loopt rond
+function heistVanVandaag(datum) {
+  const n = HEIST_VOLGORDE.length;
+  const verschil = dagNummer(datum) - dagNummer(HEIST_START);
+  return HEIST_VOLGORDE[((verschil % n) + n) % n];
 }
 
 // wat de student mag zien: nooit het juiste antwoord of de uitleg vooraf
 function publiekeHeist(h) {
   return {
-    id: h.id, type: h.type, vraag: h.vraag, uitleg: h.uitleg || "",
+    id: h.id, type: h.type, niveau: h.niveau || 1, vraag: h.vraag, uitleg: h.uitleg || "",
     code: h.code || "", opties: h.opties || null,
     start: h.start || { html: "", css: "" },
     eisen: (h.eisen || []).map(e => e.omschrijving),
@@ -1142,6 +1183,7 @@ app.get("/heist", requireAuth, async (req, res) => {
       waarom: gedaan && gedaan.geslaagd ? vandaag.waarom : null,
       juist: gedaan && gedaan.geslaagd && vandaag.type === "uitleg" ? vandaag.juist : null,
     }),
+    spiek: SPIEK,
     beloning: HEIST_BELONING,
     streak: h.streak || 0,
     verdiend: data.earned || 0,

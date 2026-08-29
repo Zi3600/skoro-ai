@@ -1333,7 +1333,7 @@ async function openHeist() {
 
   // --- de dagelijkse heist ---
   const soortLabel = { uitleg: "wat doe ik hier?", debug: "zoek de fout", schrijf: "schrijf me" };
-  $("daily-type").textContent = soortLabel[d.type] || "vandaag";
+  $("daily-type").textContent = (soortLabel[d.type] || "vandaag") + " · niveau " + (d.niveau || 1);
   $("daily-vraag").textContent = d.vraag;
   $("daily-uitleg").textContent = d.uitleg || "";
   $("daily-status").hidden = !d.gedaan;
@@ -1375,6 +1375,24 @@ async function openHeist() {
     </button>`).join("");
 
   sluitWerk();
+}
+
+// het spiekbriefje: welke tag hoort bij welk woord uit de opdracht
+function openSpiek() {
+  const groepen = (heistData && heistData.spiek) || [];
+  $("spiek-inhoud").innerHTML = groepen.map(g => `
+    <div class="spiek-groep">
+      <div class="spiek-kop">${esc(g.groep)}</div>
+      <table class="spiek-tabel">
+        ${g.rijen.map(r => `
+          <tr>
+            <td class="sp-woord">${esc(r.woord)}</td>
+            <td class="sp-tag"><code>${esc(r.tag)}</code></td>
+            <td class="sp-uitleg">${esc(r.uitleg)}<br><code class="sp-vb">${esc(r.voorbeeld)}</code></td>
+          </tr>`).join("")}
+      </table>
+    </div>`).join("");
+  $("modal-spiek").classList.add("on");
 }
 
 function opdrachtVan(soort, id) {
