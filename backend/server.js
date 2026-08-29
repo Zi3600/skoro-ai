@@ -1094,10 +1094,15 @@ function heistVan(data) {
   return data.heist;
 }
 
-// iedereen krijgt dezelfde heist op dezelfde dag, afgeleid van de datum
+/* Iedereen krijgt dezelfde heist op dezelfde dag. We tellen het aantal dagen
+   sinds 1970 en lopen de lijst netjes rond. Niet met een hash over de datum:
+   dat gaf tweemaal dezelfde heist op twee dagen na elkaar (29 -> 30 verandert
+   de tekensom met precies 8, en de lijst is 8 lang) en een scheve verdeling.
+   Met een dagteller komt elke heist exact even vaak aan de beurt. */
 function heistVanVandaag(datum) {
-  const som = [...String(datum)].reduce((a, c) => a + c.charCodeAt(0), 0);
-  return DAILY[som % DAILY.length];
+  const [j, m, d] = String(datum).split("-").map(Number);
+  const dagen = Math.floor(Date.UTC(j, m - 1, d) / 86400000);
+  return DAILY[((dagen % DAILY.length) + DAILY.length) % DAILY.length];
 }
 
 // wat de student mag zien: nooit het juiste antwoord of de uitleg vooraf
