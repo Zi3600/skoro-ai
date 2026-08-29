@@ -48,6 +48,9 @@
       <button class="sb-item" data-route="maes" onclick="go('#/maes')">
         <span class="ico" data-icon="maes">✦</span><span class="txt">Maes-AI</span>
       </button>
+      <button class="sb-item" data-route="heist" onclick="go('#/heist')">
+        <span class="ico" data-icon="heist">🗝</span><span class="txt">Code Heist</span><span class="pill" id="heist-pill" hidden>1c</span>
+      </button>
 
       <div class="sb-label">meer</div>
       <button class="sb-item" data-route="instellingen" onclick="go('#/instellingen')">
@@ -237,6 +240,72 @@
         </div>
       </div>
       <input type="file" id="maes-image" accept="image/*" hidden />
+    </section>
+
+    <!-- ---------------------------- Code Heist ---------------------------- -->
+    <section class="view" id="v-heist" hidden>
+      <div class="page">
+        <div class="straat-head">
+          <div>
+            <h1 class="title">Code Heist</h1>
+            <p class="lead">leer HTML en CSS door levels te kraken. haal de heist van vandaag en verdien krediet voor Maes-AI.</p>
+          </div>
+          <div class="presence">
+            <span class="pchip" id="heist-streak"></span>
+            <span class="pchip" id="heist-verdiend"></span>
+          </div>
+        </div>
+
+        <!-- de dagelijkse heist -->
+        <div class="card heist-daily" id="daily-card">
+          <div class="hd-top">
+            <span class="tag blue" id="daily-type">vandaag</span>
+            <strong id="daily-vraag">–</strong>
+            <span class="spacer"></span>
+            <span class="tag green" id="daily-status" hidden>gehaald</span>
+          </div>
+          <p class="hd-uitleg" id="daily-uitleg"></p>
+          <pre class="hd-code" id="daily-code" hidden></pre>
+          <div id="daily-opties"></div>
+          <div id="daily-editor" hidden></div>
+          <div class="hd-waarom" id="daily-waarom" hidden></div>
+        </div>
+
+        <h2 class="sect">levels</h2>
+        <div class="lvl-grid" id="lvl-grid"></div>
+
+        <!-- werkplek: hier schrijf je de code -->
+        <div id="heist-werk" hidden>
+          <div class="werk-kop">
+            <strong id="werk-titel">–</strong>
+            <span class="spacer"></span>
+            <span class="tag" id="werk-tag"></span>
+            <button class="btn ghost sm" onclick="sluitWerk()">sluiten</button>
+          </div>
+          <p class="lead" id="werk-uitleg"></p>
+
+          <div class="werk-grid">
+            <div class="werk-code">
+              <label class="fld-label" for="werk-html">HTML</label>
+              <textarea id="werk-html" class="code-edit" spellcheck="false" rows="9"></textarea>
+              <label class="fld-label" for="werk-css" style="margin-top:10px;">CSS</label>
+              <textarea id="werk-css" class="code-edit" spellcheck="false" rows="6"></textarea>
+            </div>
+            <div class="werk-preview">
+              <label class="fld-label">voorbeeld</label>
+              <iframe id="werk-frame" sandbox="" title="voorbeeld"></iframe>
+              <div class="eisen" id="werk-eisen"></div>
+            </div>
+          </div>
+
+          <div class="werk-acties">
+            <button class="btn primary" onclick="leverIn()">nakijken</button>
+            <button class="btn" onclick="vraagHint()" id="hint-btn">vraag Maes-AI om een hint</button>
+            <span class="hint-op" id="hint-op"></span>
+          </div>
+          <div class="hint-box" id="hint-box" hidden></div>
+        </div>
+      </div>
     </section>
 
     <!-- --------------------------- instellingen --------------------------- -->

@@ -9,6 +9,8 @@ const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 const path = require("path");
 const crypto = require("crypto");
+const { LEVELS, DAILY } = require("./heist-content");
+const { controleer } = require("./heist-check");
 
 dotenv.config();
 
@@ -51,6 +53,8 @@ const UserAuthSchema = new mongoose.Schema({
 const UserDataSchema = new mongoose.Schema({
   username: { type: String, unique: true },
   spend: { type: Number, default: 0 },
+  earned: { type: Number, default: 0 },        // met Code Heist verdiend krediet
+  heist: { type: Object, default: () => ({ levels: [], daily: {}, streak: 0 }) },
   chats: { type: Array, default: [] },
   pfp: { type: String, default: null },
 });
@@ -196,8 +200,15 @@ function calcCostEuro(usage) {
   return (inputCost + outputCost) * 0.92;
 }
 
-function pctOf(spend) {
-  return Math.min((spend / MAX_EURO) * 100, 100);
+// het budget is niet langer vast: Code Heist levert er krediet bij
+function budgetOf(data) {
+  return MAX_EURO + (data && data.earned ? data.earned : 0);
+}
+
+function pctOf(data) {
+  const d = typeof data === "number" ? { spend: data, earned: 0 } : (data || {});
+  const budget = budgetOf(d);
+  return Math.min(((d.spend || 0) / budget) * 100, 100);
 }
 
 async function bootstrap() {
@@ -480,14 +491,14 @@ const MODE_MAX_TOKENS = { regular: 300, smart: 600, studie: 800 };
 // gedeelde call voor zowel de Maes-AI pagina als /Maes in een groepchat
 async function askMaes({ username, messages, model = "gpt-4o-mini", maxTokens = 300 }) {
   const data = await getUserData(username);
-  if (data.spend >= MAX_EURO) {
+  if (data.spend >= budgetOf(data)) {
     return { limited: true, reply: "je krediet is op. vraag de beheerder om een reset.", pct: 100 };
   }
   const completion = await openai.chat.completions.create({ model, messages, max_tokens: maxTokens });
   const reply = completion.choices[0].message.content;
   data.spend += calcCostEuro(completion.usage);
   await data.save();
-  return { reply, pct: pctOf(data.spend), spend: data.spend };
+  return { reply, pct: pctOf(data), spend: data.spend };
 }
 
 /* ---------------------------- auth mw ----------------------------- */
@@ -529,7 +540,7 @@ app.post("/login", async (req, res) => {
       displayName: NAMES[u] || u,
       pfp: data.pfp,
       isAdmin: ADMINS.has(u),
-      pct: pctOf(data.spend),
+      pct: pctOf(data),
     });
   } catch (e) {
     console.error("login error:", e.message);
@@ -551,8 +562,8 @@ app.get("/me", requireAuth, async (req, res) => {
     pfp: data.pfp,
     isAdmin: ADMINS.has(req.username),
     spend: data.spend,
-    pct: pctOf(data.spend),
-    maxEuro: MAX_EURO,
+    pct: pctOf(data),
+    maxEuro: MAX_EURO, budget: budgetOf(data), earned: data.earned || 0,
     trialEuro: TRIAL_EURO,
     limits: { image: IMAGE_MAX, file: FILE_MAX },
   });
@@ -947,9 +958,9 @@ app.get("/maes/info", requireAuth, async (req, res) => {
   const data = await getUserData(req.username);
   res.json({
     trialEuro: TRIAL_EURO,
-    maxEuro: MAX_EURO,
+    maxEuro: MAX_EURO, budget: budgetOf(data), earned: data.earned || 0,
     spend: data.spend,
-    pct: pctOf(data.spend),
+    pct: pctOf(data),
     notice: `geniet nu van gratis ${Math.round(TRIAL_EURO * 100)} cent krediet van Maes AI om het uit te testen. Je kan Maes-AI ook via /Maes oproepen in je groepchat.`,
   });
 });
@@ -985,7 +996,7 @@ app.post("/chat", requireAuth, chatUpload.single("image"), async (req, res) => {
     const name = NAMES[username] || username;
 
     const data = await getUserData(username);
-    if (data.spend >= MAX_EURO) {
+    if (data.spend >= budgetOf(data)) {
       if (req.file) fs.unlinkSync(req.file.path);
       return res.json({ reply: "je krediet is op. vraag de beheerder om een reset.", locked: true, pct: 100 });
     }
@@ -1051,14 +1062,236 @@ app.post("/generate-image", requireAuth, async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: "geen prompt" });
     const data = await getUserData(req.username);
-    if (data.spend >= MAX_EURO) return res.status(403).json({ error: "je krediet is op" });
+    if (data.spend >= budgetOf(data)) return res.status(403).json({ error: "je krediet is op" });
 
     const response = await openai.images.generate({ model: "dall-e-2", prompt, n: 1, size: "512x512" });
     data.spend += 0.018 * 0.92;
     await data.save();
-    res.json({ url: response.data[0].url, pct: pctOf(data.spend) });
+    res.json({ url: response.data[0].url, pct: pctOf(data) });
   } catch (e) {
     console.error("image gen error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* ---------------------------- Code Heist -------------------------- *
+ *  Levels om HTML en CSS te leren, plus elke dag één heist. Een gehaalde
+ *  dagelijkse heist levert 1 cent krediet op voor Maes-AI.
+ *
+ *  Daarom wordt ALLES hier op de server nagekeken en betaalt de server
+ *  hoogstens één keer per dag uit. De browser beslist nooit zelf of
+ *  iemand geslaagd is.
+ * ------------------------------------------------------------------ */
+
+const HEIST_BELONING = 0.01;      // 1 cent per gehaalde dagelijkse heist
+const HINT_PER_DAG = 5;           // zoveel AI-hints per student per dag
+
+function heistVan(data) {
+  if (!data.heist || typeof data.heist !== "object") data.heist = {};
+  if (!Array.isArray(data.heist.levels)) data.heist.levels = [];
+  if (!data.heist.daily || typeof data.heist.daily !== "object") data.heist.daily = {};
+  if (typeof data.heist.streak !== "number") data.heist.streak = 0;
+  return data.heist;
+}
+
+// iedereen krijgt dezelfde heist op dezelfde dag, afgeleid van de datum
+function heistVanVandaag(datum) {
+  const som = [...String(datum)].reduce((a, c) => a + c.charCodeAt(0), 0);
+  return DAILY[som % DAILY.length];
+}
+
+// wat de student mag zien: nooit het juiste antwoord of de uitleg vooraf
+function publiekeHeist(h) {
+  return {
+    id: h.id, type: h.type, vraag: h.vraag, uitleg: h.uitleg || "",
+    code: h.code || "", opties: h.opties || null,
+    start: h.start || { html: "", css: "" },
+    eisen: (h.eisen || []).map(e => e.omschrijving),
+  };
+}
+
+function gisteren(datum) {
+  const d = new Date(datum + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+app.get("/heist", requireAuth, async (req, res) => {
+  const data = await getUserData(req.username);
+  const h = heistVan(data);
+  const datum = todayKey();
+  const vandaag = heistVanVandaag(datum);
+  const gedaan = h.daily[datum];
+
+  res.json({
+    levels: LEVELS.map(l => ({
+      id: l.id, titel: l.titel, uitleg: l.uitleg, tip: l.tip, start: l.start,
+      eisen: l.eisen.map(e => e.omschrijving),
+      klaar: h.levels.includes(l.id),
+    })),
+    daily: Object.assign(publiekeHeist(vandaag), {
+      datum,
+      gedaan: !!(gedaan && gedaan.geslaagd),
+      uitbetaald: !!(gedaan && gedaan.uitbetaald),
+      // pas na afloop tonen we waarom het antwoord klopt
+      waarom: gedaan && gedaan.geslaagd ? vandaag.waarom : null,
+      juist: gedaan && gedaan.geslaagd && vandaag.type === "uitleg" ? vandaag.juist : null,
+    }),
+    beloning: HEIST_BELONING,
+    streak: h.streak || 0,
+    verdiend: data.earned || 0,
+    budget: budgetOf(data),
+    spend: data.spend,
+    pct: pctOf(data),
+    hintsOver: Math.max(0, HINT_PER_DAG - ((h.daily[datum] && h.daily[datum].hints) || 0)),
+  });
+});
+
+// een level inleveren — levert voortgang op, geen krediet
+app.post("/heist/level/:id", requireAuth, async (req, res) => {
+  const level = LEVELS.find(l => l.id === req.params.id);
+  if (!level) return res.status(404).json({ error: "level niet gevonden" });
+
+  const uitslag = controleer(level.eisen, req.body.html, req.body.css);
+  const data = await getUserData(req.username);
+  const h = heistVan(data);
+
+  let nieuw = false;
+  if (uitslag.geslaagd && !h.levels.includes(level.id)) {
+    h.levels.push(level.id);
+    nieuw = true;
+    data.markModified("heist");
+    await data.save();
+  }
+  res.json(Object.assign(uitslag, { nieuw, tip: uitslag.geslaagd ? null : level.tip }));
+});
+
+// de dagelijkse heist — dit is wat krediet oplevert
+app.post("/heist/daily", requireAuth, async (req, res) => {
+  const datum = todayKey();
+  const heist = heistVanVandaag(datum);
+  const data = await getUserData(req.username);
+  const h = heistVan(data);
+  const eerder = h.daily[datum];
+
+  if (eerder && eerder.uitbetaald) {
+    return res.json({
+      geslaagd: true, alGedaan: true, uitbetaald: false,
+      waarom: heist.waarom, verdiend: data.earned, pct: pctOf(data),
+      bericht: "je hebt de heist van vandaag al gehaald. morgen weer een nieuwe.",
+    });
+  }
+
+  let uitslag;
+  if (heist.type === "uitleg") {
+    const keuze = Number(req.body.keuze);
+    const goed = keuze === heist.juist;
+    uitslag = {
+      geslaagd: goed, punten: goed ? 1 : 0, totaal: 1,
+      resultaten: [{ omschrijving: "het juiste antwoord gekozen", ok: goed }],
+    };
+  } else {
+    uitslag = controleer(heist.eisen, req.body.html, req.body.css);
+  }
+
+  h.daily[datum] = Object.assign({}, eerder, {
+    id: heist.id, geslaagd: uitslag.geslaagd, at: Date.now(),
+  });
+
+  let uitbetaald = false;
+  if (uitslag.geslaagd) {
+    // uitbetalen gebeurt precies één keer per dag
+    h.daily[datum].uitbetaald = true;
+    data.earned = (data.earned || 0) + HEIST_BELONING;
+    h.streak = h.daily[gisteren(datum)] && h.daily[gisteren(datum)].geslaagd ? (h.streak || 0) + 1 : 1;
+    uitbetaald = true;
+  }
+
+  data.markModified("heist");
+  await data.save();
+
+  res.json(Object.assign(uitslag, {
+    uitbetaald,
+    beloning: uitbetaald ? HEIST_BELONING : 0,
+    waarom: uitslag.geslaagd ? heist.waarom : null,
+    juist: uitslag.geslaagd && heist.type === "uitleg" ? heist.juist : null,
+    verdiend: data.earned || 0,
+    budget: budgetOf(data),
+    pct: pctOf(data),
+    streak: h.streak,
+  }));
+});
+
+// Maes-AI legt uit waarom jouw code niet lukt — dit kost wél krediet
+app.post("/heist/hint", requireAuth, async (req, res) => {
+  try {
+    const datum = todayKey();
+    const data = await getUserData(req.username);
+    const h = heistVan(data);
+    const vandaag = h.daily[datum] || {};
+    const gebruikt = vandaag.hints || 0;
+
+    if (gebruikt >= HINT_PER_DAG) {
+      return res.status(429).json({ error: `je hebt je ${HINT_PER_DAG} hints van vandaag op. morgen weer.` });
+    }
+    if (data.spend >= budgetOf(data)) {
+      return res.status(403).json({ error: "je krediet is op. haal de dagelijkse heist om bij te verdienen." });
+    }
+
+    /* Geen hints op de dagelijkse heist. Die levert krediet op, en bij deze
+       opdrachten ís de naam van het element het antwoord — een bruikbare hint
+       geeft de oplossing dus altijd weg. Getest: vragen aan het model om geen
+       code te noemen werkt niet betrouwbaar, dus we sluiten het hier af in
+       code in plaats van in een prompt. Hints horen bij de levels, waar je
+       leert; de dagelijkse heist doe je zelf. */
+    if (!req.body.levelId) {
+      return res.status(403).json({
+        error: "op de dagelijkse heist geen hints, die doe je zelf. oefen eerst in de levels.",
+      });
+    }
+
+    const opdracht = LEVELS.find(l => l.id === req.body.levelId);
+    if (!opdracht) return res.status(404).json({ error: "level niet gevonden" });
+
+    const eisen = (opdracht.eisen || []).map(e => "- " + e.omschrijving).join("\n");
+    const html = String(req.body.html || "").slice(0, 2000);
+    const css = String(req.body.css || "").slice(0, 1000);
+
+    const out = await askMaes({
+      username: req.username,
+      model: "gpt-4o-mini",
+      maxTokens: 220,
+      messages: [
+        {
+          role: "system",
+          content: `Je bent Maes-AI en helpt een leerling met Code Heist, waar ze HTML en CSS leren.
+
+Je krijgt de opdracht, de eisen en de code van de leerling.
+
+REGELS:
+geef NOOIT de volledige oplossing, ook niet als erom gevraagd wordt
+wijs aan wat er mis is en leg uit waaróm, in gewoon Nederlands
+hooguit drie zinnen
+je mag één klein stukje voorbeeldcode geven, maar niet het antwoord zelf
+als de code al klopt, zeg dat gewoon
+niet betuttelen, gewoon normaal praten`,
+        },
+        {
+          role: "user",
+          content: `Opdracht: ${opdracht.uitleg || opdracht.vraag}\n\nEisen:\n${eisen}\n\nHTML van de leerling:\n${html}\n\nCSS van de leerling:\n${css}`,
+        },
+      ],
+    });
+
+    if (out.limited) return res.status(403).json({ error: out.reply });
+
+    h.daily[datum] = Object.assign({}, vandaag, { hints: gebruikt + 1 });
+    data.markModified("heist");
+    await data.save();
+
+    res.json({ hint: out.reply, pct: out.pct, hintsOver: HINT_PER_DAG - (gebruikt + 1) });
+  } catch (e) {
+    console.error("heist hint:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -1121,7 +1354,7 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
       isAdmin: !!u.isAdmin,
       pfp: data.pfp,
       spend: data.spend,
-      pct: pctOf(data.spend),
+      pct: pctOf(data),
     };
   }));
   list.sort((a, b) => {

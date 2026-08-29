@@ -156,12 +156,17 @@ applyTheme();
 function openSidebar() { $("sidebar").classList.add("open"); $("scrim").classList.add("on"); }
 function closeSidebar() { $("sidebar").classList.remove("open"); $("scrim").classList.remove("on"); }
 
-function setCredit(pct) {
+let myBudget = 0.25;   // groeit mee met wat je in Code Heist verdient
+
+function setCredit(pct, budget) {
+  if (budget) myBudget = budget;
   if (pct === undefined || pct === null) return;
   const bar = $("credit-bar");
   bar.style.width = Math.min(pct, 100) + "%";
   bar.style.background = pct < 55 ? "var(--green)" : pct < 85 ? "var(--yellow)" : "var(--red)";
-  $("credit-label").textContent = Math.round(100 - Math.min(pct, 100)) + "% over";
+  // in centen tonen, anders zie je niet dat een gehaalde heist er krediet bij zet
+  const overCent = Math.max(0, myBudget * (1 - Math.min(pct, 100) / 100) * 100);
+  $("credit-label").textContent = overCent.toFixed(overCent < 10 ? 1 : 0) + " cent over";
   const sb = $("settings-bar");
   if (sb) {
     sb.style.width = Math.min(pct, 100) + "%";
@@ -178,7 +183,7 @@ function paintAvatar(el, name, pfp) {
 
 /* ------------------------------ routing --------------------------- */
 
-const VIEWS = ["straat", "archief", "archiefdag", "groepen", "groep", "maes", "instellingen", "beheer"];
+const VIEWS = ["straat", "archief", "archiefdag", "groepen", "groep", "maes", "heist", "instellingen", "beheer"];
 
 function go(hash) { closeSidebar(); if (location.hash === hash) route(); else location.hash = hash; }
 
@@ -207,6 +212,7 @@ function route() {
   if (head === "groepen") { showView("groepen"); crumb(["groepen"]); renderGroups(); return; }
   if (head === "groep" && arg) { showView("groep"); openGroup(arg); return; }
   if (head === "maes") { showView("maes"); crumb(["Maes-AI"]); openMaes(); return; }
+  if (head === "heist") { showView("heist"); crumb(["Code Heist"]); openHeist(); return; }
   if (head === "instellingen") { showView("instellingen"); crumb(["instellingen"]); openSettings(); return; }
   if (head === "beheer") { showView("beheer"); crumb(["beheer"]); loadAdmin(); return; }
 
@@ -236,7 +242,7 @@ async function boot() {
   paintAvatar($("me-av"), me.displayName, me.pfp);
   if (me.isAdmin) { $("sb-beheer").hidden = false; $("clear-tool").hidden = false; }
   setCredit(0);
-  api("/me").then(i => setCredit(i.pct)).catch(() => {});
+  api("/me").then(i => setCredit(i.pct, i.budget)).catch(() => {});
 
   initSocket();
   await loadIcons();
@@ -1305,6 +1311,185 @@ async function sendMaes() {
   }
 }
 
+/* ============================= CODE HEIST ========================== *
+ *  Het nakijken gebeurt op de server, want een gehaalde dagelijkse
+ *  heist levert echt krediet op. Hier tonen we alleen de uitslag.
+ * ================================================================== */
+
+let heistData = null;
+let werkOpdracht = null;    // { soort: "level"|"daily", id }
+
+async function openHeist() {
+  $("topbar-actions").innerHTML = "";
+  try {
+    heistData = await api("/heist");
+  } catch (e) { toast(e.message); return; }
+
+  const d = heistData.daily;
+  $("heist-streak").innerHTML = `<span class="dot"></span>${heistData.streak} dag${heistData.streak === 1 ? "" : "en"} op rij`;
+  $("heist-verdiend").innerHTML = `<span class="dot"></span>${(heistData.verdiend * 100).toFixed(0)} cent verdiend`;
+  $("heist-pill").hidden = d.gedaan;
+  setCredit(heistData.pct, heistData.budget);
+
+  // --- de dagelijkse heist ---
+  const soortLabel = { uitleg: "wat doe ik hier?", debug: "zoek de fout", schrijf: "schrijf me" };
+  $("daily-type").textContent = soortLabel[d.type] || "vandaag";
+  $("daily-vraag").textContent = d.vraag;
+  $("daily-uitleg").textContent = d.uitleg || "";
+  $("daily-status").hidden = !d.gedaan;
+  $("daily-card").classList.toggle("gehaald", d.gedaan);
+
+  const codeEl = $("daily-code");
+  codeEl.hidden = !d.code;
+  codeEl.textContent = d.code || "";
+
+  const opties = $("daily-opties");
+  const editor = $("daily-editor");
+  opties.innerHTML = "";
+  editor.hidden = true;
+
+  if (d.type === "uitleg") {
+    opties.innerHTML = d.opties.map((o, i) =>
+      `<button class="keuze${d.gedaan && d.juist === i ? " goed" : ""}" ${d.gedaan ? "disabled" : ""}
+               onclick="antwoordDaily(${i})">${esc(o)}</button>`).join("");
+  } else {
+    editor.hidden = false;
+    editor.innerHTML = d.gedaan
+      ? `<p class="hd-uitleg">je hebt deze heist al gehaald.</p>`
+      : `<button class="btn primary" onclick="openWerk('daily')">openen en oplossen</button>`;
+  }
+
+  const waarom = $("daily-waarom");
+  waarom.hidden = !d.waarom;
+  if (d.waarom) waarom.innerHTML = `<strong>waarom:</strong> ${esc(d.waarom)}`;
+
+  // --- levels ---
+  $("lvl-grid").innerHTML = heistData.levels.map((l, i) => `
+    <button class="lvl-card${l.klaar ? " klaar" : ""}" onclick="openWerk('level','${esc(l.id)}')">
+      <div class="lvl-n">${i + 1}</div>
+      <div class="lvl-b">
+        <strong>${esc(l.titel)}</strong>
+        <span>${esc(l.uitleg)}</span>
+      </div>
+      ${l.klaar ? '<span class="tag green">gekraakt</span>' : ""}
+    </button>`).join("");
+
+  sluitWerk();
+}
+
+function opdrachtVan(soort, id) {
+  return soort === "daily" ? heistData.daily : heistData.levels.find(l => l.id === id);
+}
+
+function openWerk(soort, id) {
+  const o = opdrachtVan(soort, id);
+  if (!o) return;
+  werkOpdracht = { soort, id: id || o.id };
+
+  $("heist-werk").hidden = false;
+  $("werk-titel").textContent = o.titel || o.vraag;
+  $("werk-uitleg").textContent = o.uitleg || "";
+  $("werk-tag").textContent = soort === "daily" ? "levert 1 cent op" : "level";
+  $("werk-tag").className = "tag" + (soort === "daily" ? " green" : "");
+
+  $("werk-html").value = (o.start && o.start.html) || "";
+  $("werk-css").value = (o.start && o.start.css) || "";
+  toonEisen(o.eisen.map(t => ({ omschrijving: t, ok: null })));
+  $("hint-box").hidden = true;
+  // hints horen bij de levels; de dagelijkse heist doe je zelf, die levert krediet op
+  const isDaily = soort === "daily";
+  $("hint-btn").hidden = isDaily;
+  $("hint-op").textContent = isDaily
+    ? "de dagelijkse heist doe je zonder hulp"
+    : heistData.hintsOver + " hints over vandaag";
+  ververs();
+  $("heist-werk").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function sluitWerk() {
+  $("heist-werk").hidden = true;
+  werkOpdracht = null;
+}
+
+function toonEisen(lijst) {
+  $("werk-eisen").innerHTML = lijst.map(r =>
+    `<div class="eis ${r.ok === null ? "" : r.ok ? "ok" : "fout"}">
+       <span class="vink">${r.ok === null ? "○" : r.ok ? "✓" : "✕"}</span>${esc(r.omschrijving)}
+     </div>`).join("");
+}
+
+// live voorbeeld in een afgeschermde iframe: student-code mag niets van de app zien
+function ververs() {
+  const html = $("werk-html").value;
+  const css = $("werk-css").value;
+  $("werk-frame").srcdoc =
+    `<!doctype html><meta charset="utf-8"><style>body{font-family:Tahoma,sans-serif;padding:10px;margin:0}${css}</style>${html}`;
+}
+
+["werk-html", "werk-css"].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener("input", ververs);
+});
+
+async function leverIn() {
+  if (!werkOpdracht) return;
+  const body = { html: $("werk-html").value, css: $("werk-css").value };
+  const url = werkOpdracht.soort === "daily" ? "/heist/daily" : "/heist/level/" + werkOpdracht.id;
+  try {
+    const r = await api(url, { json: body });
+    toonEisen(r.resultaten || []);
+    if (r.geslaagd) {
+      if (r.uitbetaald) {
+        toast(`gekraakt! +${Math.round(r.beloning * 100)} cent krediet erbij`);
+        setCredit(r.pct, r.budget);
+      } else if (r.alGedaan) {
+        toast(r.bericht);
+      } else {
+        toast(r.nieuw ? "level gekraakt" : "klopt helemaal");
+      }
+      await openHeist();
+    } else {
+      toast(`${r.punten} van ${r.totaal} eisen gehaald`);
+      if (r.tip) { $("hint-box").hidden = false; $("hint-box").innerHTML = `<strong>tip:</strong> ${esc(r.tip)}`; }
+    }
+  } catch (e) { toast(e.message); }
+}
+
+async function antwoordDaily(keuze) {
+  try {
+    const r = await api("/heist/daily", { json: { keuze } });
+    if (r.geslaagd) {
+      toast(r.uitbetaald ? `juist! +${Math.round(r.beloning * 100)} cent krediet erbij` : (r.bericht || "juist"));
+      if (r.pct !== undefined) setCredit(r.pct, r.budget);
+    } else {
+      toast("dat is het niet, probeer opnieuw");
+    }
+    await openHeist();
+  } catch (e) { toast(e.message); }
+}
+
+async function vraagHint() {
+  if (!werkOpdracht) return;
+  const btn = $("hint-btn");
+  btn.disabled = true;
+  btn.textContent = "Maes-AI kijkt...";
+  try {
+    const r = await api("/heist/hint", {
+      json: {
+        levelId: werkOpdracht.soort === "level" ? werkOpdracht.id : null,
+        html: $("werk-html").value,
+        css: $("werk-css").value,
+      },
+    });
+    $("hint-box").hidden = false;
+    $("hint-box").innerHTML = `<strong>Maes-AI:</strong> ${esc(r.hint)}`;
+    $("hint-op").textContent = r.hintsOver + " hints over vandaag";
+    if (r.pct !== undefined) setCredit(r.pct);
+  } catch (e) { toast(e.message); }
+  btn.disabled = false;
+  btn.textContent = "vraag Maes-AI om een hint";
+}
+
 /* ---------------------------- instellingen ------------------------ */
 
 async function openSettings() {
@@ -1313,7 +1498,7 @@ async function openSettings() {
   $("settings-user").textContent = me.username;
   paintAvatar($("settings-av"), me.displayName, me.pfp);
   applyTheme();
-  try { const info = await api("/me"); setCredit(info.pct); } catch (e) {}
+  try { const info = await api("/me"); setCredit(info.pct, info.budget); } catch (e) {}
 }
 
 $("pfp-input").addEventListener("change", async e => {

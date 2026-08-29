@@ -1,4 +1,4 @@
-const CACHE = "drerries-v2";
+const CACHE = "drerries-v3";
 
 self.addEventListener("install", e => {
   e.waitUntil(
