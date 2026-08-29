@@ -32,7 +32,7 @@
     <div class="sb-scroll">
       <div class="sb-label">school</div>
       <button class="sb-item" data-route="straat" onclick="go('#/straat')">
-        <span class="ico" data-icon="straat">🛣️</span><span class="txt">de straat</span><span class="pill" id="straat-live" hidden>live</span>
+        <span class="ico" data-icon="straat">🛣️</span><span class="txt">straat</span><span class="pill" id="straat-live" hidden>live</span>
       </button>
       <button class="sb-item" data-route="archief" onclick="go('#/archief')">
         <span class="ico" data-icon="archief">🗂️</span><span class="txt">archief</span>
@@ -86,7 +86,7 @@
       <div class="page">
         <div class="straat-head">
           <div>
-            <h1 class="title">de straat</h1>
+            <h1 class="title">straat</h1>
             <p class="lead" id="straat-sub">het whiteboard van vandaag. iedereen tekent en typt hier live mee. morgen begint een nieuwe en gaat deze naar het archief.</p>
           </div>
           <div class="presence" id="presence"></div>
@@ -130,7 +130,7 @@
             <div class="sc-scroll" id="sc-messages"></div>
             <div class="sc-typing" id="sc-typing"></div>
             <div class="sc-composer">
-              <textarea id="sc-input" rows="1" placeholder="zeg iets tegen iedereen..."></textarea>
+              <textarea id="sc-input" rows="1" placeholder="zeg iets tegen iedereen op straat..."></textarea>
               <button class="btn primary sm" onclick="sendStraatChat()">stuur</button>
             </div>
           </aside>
@@ -142,7 +142,7 @@
     <section class="view" id="v-archief" hidden>
       <div class="page">
         <h1 class="title">archief</h1>
-        <p class="lead">elke dag op de straat wordt hier bewaard.</p>
+        <p class="lead">elke dag op straat wordt hier bewaard.</p>
         <div class="arch-grid" id="arch-grid"></div>
         <div class="empty" id="arch-empty" hidden><span class="big" data-icon="archief">🗂️</span>nog niks in het archief</div>
       </div>
@@ -279,7 +279,7 @@
     <section class="view" id="v-beheer" hidden>
       <div class="page">
         <h1 class="title">beheer</h1>
-        <p class="lead">vul per student de naam en het wachtwoord in. wijzigingen slaan op zodra je het veld verlaat.</p>
+        <p class="lead">vul per student de gebruikersnaam, de naam en het wachtwoord in. wijzigingen slaan op zodra je het veld verlaat. bij het hernoemen van een gebruikersnaam verhuizen groepen, berichten en krediet automatisch mee.</p>
 
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;">
           <button class="btn" onclick="resetAllSpend()">alle kredieten resetten</button>
@@ -288,7 +288,7 @@
 
         <table class="tbl">
           <thead>
-            <tr><th style="width:96px;">login</th><th>naam</th><th style="width:150px;">wachtwoord</th>
+            <tr><th style="width:140px;">gebruikersnaam</th><th>naam</th><th style="width:150px;">wachtwoord</th>
                 <th style="width:150px;">krediet</th><th style="width:80px;"></th></tr>
           </thead>
           <tbody id="admin-rows"></tbody>
@@ -355,6 +355,25 @@
     <div class="row">
       <button class="btn ghost" onclick="closeModal()">annuleren</button>
       <button class="btn primary" onclick="createGroup()">maken</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="modal-background">
+  <div class="modal">
+    <h3 id="bg-title">achtergrond</h3>
+    <p id="bg-sub">kies een achtergrond of stuur je eigen afbeelding.</p>
+    <div class="bg-grid" id="bg-presets"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;">
+      <button class="btn" onclick="document.getElementById('bg-image').click()">
+        <span class="ico" data-icon="afbeelding">🖼</span> eigen afbeelding
+      </button>
+      <button class="btn danger" onclick="pickBackground('', true)">weghalen</button>
+      <input type="file" id="bg-image" accept="image/*" hidden />
+    </div>
+    <p style="font-size:11.5px;color:var(--text-faint);margin:10px 0 0;">afbeelding max 5 MB</p>
+    <div class="row">
+      <button class="btn ghost" onclick="closeModal()">sluiten</button>
     </div>
   </div>
 </div>

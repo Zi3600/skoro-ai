@@ -781,6 +781,34 @@ html[data-theme="dark"] .tbl input.cell:focus { background: rgba(5,18,45,0.85); 
 }
 .mini-bar { height: 100%; display: block; box-shadow: inset 0 1px 0 rgba(255,255,255,0.5); }
 
+.tbl input.cell.mono { font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.05em; }
+.tbl input.cell:disabled { opacity: 0.65; cursor: not-allowed; }
+
+/* --------------------------- achtergronden ------------------------- */
+
+.bg-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+.bg-swatch {
+  position: relative; height: 54px; cursor: pointer; padding: 0;
+  border: 2px solid var(--edge);
+  box-shadow: var(--gloss), var(--glow-sm);
+  overflow: hidden;
+  transition: box-shadow 0.13s, transform 0.13s;
+}
+.bg-swatch:hover { box-shadow: var(--gloss), var(--glow); transform: translateY(-1px); }
+.bg-swatch.on { border-color: #1a8fd4; box-shadow: 0 0 9px rgba(58,174,238,0.9), var(--gloss); }
+.bg-swatch span {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  font-size: 10px; font-weight: 700; color: #1a3a4a;
+  background: rgba(255,255,255,0.78);
+  padding: 2px 0;
+}
+
+/* de chat krijgt de achtergrond van de groep */
+.chat-scroll.heeft-achtergrond .msg .tx {
+  backdrop-filter: blur(2px);
+}
+.chat-scroll.heeft-achtergrond { background-repeat: no-repeat; }
+
 .fld-label {
   display: block; font-size: 10.5px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.07em;

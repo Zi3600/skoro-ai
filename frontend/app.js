@@ -211,7 +211,11 @@ function route() {
   if (head === "beheer") { showView("beheer"); crumb(["beheer"]); loadAdmin(); return; }
 
   showView("straat");
-  crumb(["de straat"]);
+  crumb(["straat"]);
+  if (me.isAdmin) {
+    $("topbar-actions").innerHTML =
+      '<button class="btn ghost sm" onclick="openBackgroundPicker(\'straat\', null)">achtergrond</button>';
+  }
   openStraat();
 }
 
@@ -246,6 +250,8 @@ function initSocket() {
   socket.on("straat:state", onStraatState);
   socket.on("straat:item", onStraatItem);
   socket.on("straat:presence", renderPresence);
+  socket.on("straat:background", bg => applyStraatBackground(bg));
+  socket.on("group:background", onGroupBackground);
   socket.on("straat:cleared", () => { straatItems = []; redrawStraat(); updateStraatFoot([]); });
 
   socket.on("straat:chat", onStraatChat);
@@ -279,6 +285,8 @@ const PALETTE = ["#37352f", "#2383e2", "#0f7b6c", "#cb912f", "#e03e3e", "#6940a5
 const SIZES = [2, 4, 8, 16];
 
 let straatItems = [];
+let straatBg = { bgPreset: "", bgFileId: null };
+let straatBgImage = null;
 let straatJoined = false;
 let tool = "pen";
 let penColor = "#37352f";
@@ -341,6 +349,7 @@ function openStraat() {
 
 function onStraatState(state) {
   straatItems = state.items || [];
+  applyStraatBackground({ bgPreset: state.bgPreset, bgFileId: state.bgFileId });
   $("straat-sub").textContent =
     `${fmtDateLong(state.date)} — iedereen tekent en typt hier live mee. morgen begint een nieuwe en gaat deze naar het archief.`;
   redrawStraat();
@@ -364,9 +373,21 @@ function updateStraatFoot(contribs) {
   $("straat-contribs").textContent = contribs.length ? "vandaag: " + contribs.join(", ") : "nog niemand vandaag";
 }
 
-function clearCanvas(c, w, h) {
+function clearCanvas(c, w, h, bg) {
   c.fillStyle = "#ffffff";
   c.fillRect(0, 0, w, h);
+  if (!bg) return;
+  if (bg.image && bg.image.complete && bg.image.naturalWidth) {
+    // vullen zonder de verhoudingen te vervormen
+    const s = Math.max(w / bg.image.naturalWidth, h / bg.image.naturalHeight);
+    const iw = bg.image.naturalWidth * s, ih = bg.image.naturalHeight * s;
+    c.drawImage(bg.image, (w - iw) / 2, (h - ih) / 2, iw, ih);
+  } else if (bg.grad) {
+    const g = c.createLinearGradient(0, 0, w * 0.35, h);
+    bg.grad.forEach((kleur, i) => g.addColorStop(i / (bg.grad.length - 1), kleur));
+    c.fillStyle = g;
+    c.fillRect(0, 0, w, h);
+  }
 }
 
 function drawItem(c, item, w, h) {
@@ -391,13 +412,47 @@ function drawItem(c, item, w, h) {
   }
 }
 
-function renderItems(c, items, w, h) {
-  clearCanvas(c, w, h);
+function renderItems(c, items, w, h, bg) {
+  clearCanvas(c, w, h, bg);
   items.forEach(i => drawItem(c, i, w, h));
 }
 
 function redrawStraat() {
-  renderItems(ctx, straatItems, CANVAS_W, CANVAS_H);
+  renderItems(ctx, straatItems, CANVAS_W, CANVAS_H, canvasBg(straatBg, straatBgImage));
+}
+
+// zet {bgPreset,bgFileId} om naar iets dat clearCanvas kan tekenen
+const PRESET_STOPS = {
+  aqua: ["#a8e4f7", "#c9f0c8", "#7ecff5"],
+  lucht: ["#dff4ff", "#9fd8f6", "#5fb6e8"],
+  gras: ["#eafbe4", "#b6e8a6", "#6fc46b"],
+  zonsondergang: ["#ffe9c7", "#ffb887", "#ef7a91"],
+  nacht: ["#12305e", "#0a1c3f", "#050d1f"],
+  papier: ["#ffffff", "#f7f5ef", "#f2f0e9"],
+};
+
+function canvasBg(bg, image) {
+  if (!bg) return null;
+  if (bg.bgFileId && image) return { image };
+  if (bg.bgPreset && PRESET_STOPS[bg.bgPreset]) return { grad: PRESET_STOPS[bg.bgPreset] };
+  return null;
+}
+
+async function applyStraatBackground(bg) {
+  straatBg = { bgPreset: bg.bgPreset || "", bgFileId: bg.bgFileId || null };
+  straatBgImage = null;
+  if (straatBg.bgFileId) {
+    try {
+      const url = await fileUrl(straatBg.bgFileId);
+      await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => { straatBgImage = img; res(); };
+        img.onerror = res;
+        img.src = url;
+      });
+    } catch (e) {}
+  }
+  redrawStraat();
 }
 
 /* ----- pointer -> canvas coords ----- */
@@ -498,7 +553,7 @@ function renderPresence(list) {
         const label = p.activity === "typing" ? "typt" : p.activity === "drawing" ? "tekent" : "kijkt mee";
         return `<span class="pchip ${p.activity}"><span class="dot"></span>${esc(p.displayName)} ${label}</span>`;
       }).join("")
-    : '<span class="pchip"><span class="dot"></span>je bent alleen op de straat</span>';
+    : '<span class="pchip"><span class="dot"></span>je bent alleen op straat</span>';
 }
 
 function undoMine() {
@@ -514,8 +569,8 @@ function undoMine() {
 }
 
 async function clearStraat() {
-  if (!confirm("de straat van vandaag helemaal leegmaken?")) return;
-  try { await api("/straat/clear", { method: "POST" }); toast("de straat is leeg"); }
+  if (!confirm("straat van vandaag helemaal leegmaken?")) return;
+  try { await api("/straat/clear", { method: "POST" }); toast("straat is leeg"); }
   catch (e) { toast(e.message); }
 }
 
@@ -626,6 +681,85 @@ $("sc-input").addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendStraatChat(); }
 });
 
+/* --------------------------- achtergronden ------------------------- */
+/* Iedereen in een groep mag de achtergrond van die groepchat kiezen.
+   De achtergrond van straat mag alleen de beheerder veranderen. */
+
+const BG_PRESETS = {
+  aqua:         { naam: "aqua",         css: "linear-gradient(160deg, #a8e4f7 0%, #c9f0c8 50%, #7ecff5 100%)" },
+  lucht:        { naam: "lucht",        css: "linear-gradient(180deg, #dff4ff 0%, #9fd8f6 55%, #5fb6e8 100%)" },
+  gras:         { naam: "gras",         css: "linear-gradient(170deg, #eafbe4 0%, #b6e8a6 55%, #6fc46b 100%)" },
+  zonsondergang:{ naam: "zonsondergang",css: "linear-gradient(170deg, #ffe9c7 0%, #ffb887 45%, #ef7a91 100%)" },
+  nacht:        { naam: "nacht",        css: "linear-gradient(170deg, #12305e 0%, #0a1c3f 55%, #050d1f 100%)" },
+  papier:       { naam: "papier",       css: "linear-gradient(180deg, #ffffff 0%, #f2f0e9 100%)" },
+};
+
+let bgTarget = null;   // { soort: "groep"|"straat", id }
+
+function openBackgroundPicker(soort, id) {
+  bgTarget = { soort, id };
+  $("bg-title").textContent = soort === "straat" ? "achtergrond van straat" : "achtergrond van deze groepchat";
+  $("bg-sub").textContent = soort === "straat"
+    ? "dit is de achtergrond waarop iedereen tekent. alleen jij kan dit veranderen."
+    : "iedereen in deze groep kan dit veranderen.";
+
+  const huidig = soort === "straat" ? straatBg : (currentGroup || {});
+  $("bg-presets").innerHTML = Object.entries(BG_PRESETS).map(([key, p]) =>
+    `<button class="bg-swatch${huidig.bgPreset === key ? " on" : ""}" style="background:${p.css}"
+             title="${esc(p.naam)}" onclick="pickBackground('${key}')"><span>${esc(p.naam)}</span></button>`
+  ).join("");
+  applyIcons($("modal-background"));
+  $("modal-background").classList.add("on");
+}
+
+async function pickBackground(preset, clear) {
+  if (!bgTarget) return;
+  const url = bgTarget.soort === "straat" ? "/straat/background" : `/groups/${bgTarget.id}/background`;
+  try {
+    await api(url, { json: clear ? { clear: true } : { preset } });
+    toast(clear ? "achtergrond weggehaald" : "achtergrond aangepast");
+    closeModal();
+  } catch (e) { toast(e.message); }
+}
+
+$("bg-image").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f || !bgTarget) return;
+  if (!f.type.startsWith("image/")) { toast("kies een afbeelding"); return; }
+  if (f.size > IMAGE_MAX) { toast("afbeelding is te groot (max 5 MB)"); return; }
+  const fd = new FormData();
+  fd.append("image", f);
+  const url = bgTarget.soort === "straat" ? "/straat/background" : `/groups/${bgTarget.id}/background`;
+  try {
+    await api(url, { method: "POST", body: fd });
+    toast("achtergrond aangepast");
+    closeModal();
+  } catch (err) { toast(err.message); }
+});
+
+// zet een achtergrond op een element, als preset of als geüploade afbeelding
+async function paintBackground(el, bgPreset, bgFileId) {
+  if (!el) return;
+  el.classList.toggle("heeft-achtergrond", !!(bgPreset || bgFileId));
+  if (bgFileId) {
+    try {
+      const url = await fileUrl(bgFileId);
+      el.style.backgroundImage = `url("${url}")`;
+      el.style.backgroundSize = "cover";
+      el.style.backgroundPosition = "center";
+      el.style.backgroundRepeat = "no-repeat";
+      el.style.backgroundAttachment = "local";
+    } catch (e) { el.style.backgroundImage = ""; }
+  } else if (bgPreset && BG_PRESETS[bgPreset]) {
+    el.style.backgroundImage = BG_PRESETS[bgPreset].css;
+    el.style.backgroundSize = "cover";
+    el.style.backgroundAttachment = "local";
+  } else {
+    el.style.backgroundImage = "";
+  }
+}
+
 /* ------------------------------ archief --------------------------- */
 
 async function loadArchief() {
@@ -649,7 +783,9 @@ async function loadArchief() {
 
       const c = card.querySelector("canvas").getContext("2d");
       clearCanvas(c, 400, 225);
-      api("/straat/" + d.date).then(doc => renderItems(c, doc.items, 400, 225)).catch(() => {});
+      api("/straat/" + d.date)
+        .then(async doc => renderItems(c, doc.items, 400, 225, await archiveBg(doc)))
+        .catch(() => {});
     });
   } catch (e) { toast(e.message); }
 }
@@ -658,12 +794,29 @@ async function openArchiefDag(date) {
   try {
     const doc = await api("/straat/" + date);
     $("ad-title").textContent = fmtDateLong(date);
-    $("ad-sub").textContent = doc.readonly ? "uit het archief — alleen kijken" : "dit is de straat van vandaag";
+    $("ad-sub").textContent = doc.readonly ? "uit het archief — alleen kijken" : "dit is straat van vandaag";
     $("ad-count").textContent = countLabel(doc.items);
     $("ad-contribs").textContent = doc.contributors.length ? doc.contributors.join(", ") : "niemand";
     const c = $("ad-canvas").getContext("2d");
-    renderItems(c, doc.items, CANVAS_W, CANVAS_H);
+    renderItems(c, doc.items, CANVAS_W, CANVAS_H, await archiveBg(doc));
   } catch (e) { toast(e.message); go("#/archief"); }
+}
+
+// laadt de achtergrond die bij die archiefdag hoorde
+async function archiveBg(doc) {
+  if (doc.bgFileId) {
+    try {
+      const url = await fileUrl(doc.bgFileId);
+      const img = await new Promise(res => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = () => res(null);
+        i.src = url;
+      });
+      if (img) return { image: img };
+    } catch (e) {}
+  }
+  return canvasBg({ bgPreset: doc.bgPreset, bgFileId: null }, null);
 }
 
 /* ================================================================== *
@@ -760,9 +913,11 @@ async function openGroup(id) {
   } catch (e) { toast(e.message); go("#/groepen"); return; }
 
   crumb(["groepen", currentGroup.name]);
+  paintBackground($("grp-scroll"), currentGroup.bgPreset, currentGroup.bgFileId);
   $("topbar-actions").innerHTML = `
     <span class="tag" title="deel deze code zodat anderen erbij kunnen">code ${esc(currentGroup.code)}</span>
     <button class="btn ghost sm" onclick="copyCode()">kopieer</button>
+    <button class="btn ghost sm" onclick="openBackgroundPicker(&#39;groep&#39;, activeGroupId)">achtergrond</button>
     <button class="btn ghost sm danger" onclick="leaveGroup()">verlaten</button>`;
 
   socket.emit("group:join", id);
@@ -891,6 +1046,15 @@ grpInput.addEventListener("input", () => {
 grpInput.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendGroupMessage(); }
 });
+
+function onGroupBackground({ groupId, bgPreset, bgFileId, door }) {
+  const g = groups.find(x => x.id === groupId);
+  if (g) { g.bgPreset = bgPreset; g.bgFileId = bgFileId; }
+  if (groupId !== activeGroupId) return;
+  if (currentGroup) { currentGroup.bgPreset = bgPreset; currentGroup.bgFileId = bgFileId; }
+  paintBackground($("grp-scroll"), bgPreset, bgFileId);
+  if (door && door !== me.displayName) toast(door + " veranderde de achtergrond");
+}
 
 function onGroupTyping({ groupId, username, displayName, on }) {
   if (groupId !== activeGroupId) return;
@@ -1176,7 +1340,8 @@ async function loadAdmin() {
     const { users, maxEuro } = await api("/admin/users");
     $("admin-rows").innerHTML = users.map(u => `
       <tr>
-        <td><span class="code">${esc(u.username)}</span>${u.isAdmin ? ' <span class="tag purple">beheer</span>' : ""}</td>
+        <td><input class="cell mono" value="${esc(u.username)}" ${u.isAdmin ? "disabled title=\"het hoofdbeheerdersaccount kan niet hernoemd worden\"" : ""}
+             onchange="saveUsername('${esc(u.username)}', this)" />${u.isAdmin ? '<span class="tag purple">beheer</span>' : ""}</td>
         <td><input class="cell" value="${esc(u.displayName)}"
              onchange="saveUser('${esc(u.username)}', this.value, null)" /></td>
         <td><input class="cell" value="${esc(u.password)}"
@@ -1288,6 +1453,25 @@ $("ls-image").addEventListener("change", async e => {
     toast("afbeelding opgeslagen");
   } catch (err) { toast(err.message); }
 });
+
+// hernoemt de gebruikersnaam; de server verhuist meteen alle verwijzingen mee
+async function saveUsername(oud, input) {
+  const nieuw = input.value.trim();
+  if (!nieuw || nieuw === oud) { input.value = oud; return; }
+  try {
+    const out = await api("/admin/users/" + encodeURIComponent(oud), { json: { newUsername: nieuw } });
+    toast(oud + " heet nu " + out.username);
+    if (oud === me.username) {
+      me.username = out.username;
+      localStorage.setItem("username", out.username);
+    }
+    loadAdmin();
+  } catch (e) {
+    toast(e.message);
+    input.value = oud;
+    loadAdmin();
+  }
+}
 
 async function saveUser(username, displayName, password) {
   const json = {};

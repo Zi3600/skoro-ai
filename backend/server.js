@@ -66,6 +66,8 @@ const StraatSchema = new mongoose.Schema({
   date: { type: String, unique: true },   // YYYY-MM-DD (Europe/Brussels)
   items: { type: Array, default: [] },    // strokes + teksten, in tekenvolgorde
   contributors: { type: Array, default: [] },
+  bgPreset: { type: String, default: "" },
+  bgFileId: { type: String, default: null },
   updatedAt: { type: Number, default: () => Date.now() },
 });
 
@@ -75,6 +77,8 @@ const GroupSchema = new mongoose.Schema({
   code: String,
   owner: String,
   members: { type: Array, default: [] },
+  bgPreset: { type: String, default: "" },     // naam van een vaste achtergrond
+  bgFileId: { type: String, default: null },   // of een eigen afbeelding
   createdAt: { type: Number, default: () => Date.now() },
 });
 
@@ -138,6 +142,8 @@ const SettingsSchema = new mongoose.Schema({
   loginText: { type: String, default: "" },
   loginImage: { type: String, default: null },
   migrationLog: { type: Array, default: [] },
+  straatBgPreset: { type: String, default: "" },
+  straatBgFileId: { type: String, default: null },
   updatedAt: { type: Number, default: () => Date.now() },
 });
 
@@ -356,9 +362,56 @@ async function migrateDiskFilesToGridFS() {
   return verslag;
 }
 
+/* --------------------------- achtergronden ------------------------- */
+/* Een achtergrond is óf een vaste keuze (bgPreset) óf een eigen afbeelding
+   die net als andere uploads in GridFS staat. De straat-achtergrond hoort
+   bij niemand in het bijzonder en krijgt daarom een vaste "groep". */
+
+const STRAAT_BG_GROUP = "__straat__";
+const PRESETS = ["aqua", "lucht", "gras", "zonsondergang", "nacht", "papier"];
+
+// slaat een geüploade achtergrond op en ruimt de vorige meteen op
+async function saveBackgroundImage(file, groupId, uploader, vorigeFileId) {
+  const fileId = rid(12);
+  let gridId;
+  try {
+    gridId = await saveToGridFS(file.path, file.originalname || "achtergrond", { groupId, uploader });
+  } finally {
+    if (fs.existsSync(file.path)) { try { fs.unlinkSync(file.path); } catch (e) {} }
+  }
+  await FileDoc.create({
+    id: fileId,
+    groupId,
+    uploader,
+    name: file.originalname || "achtergrond",
+    mime: file.mimetype,
+    size: file.size,
+    stored: String(gridId),
+    storage: "gridfs",
+    time: Date.now(),
+  });
+  storageUsed += file.size;
+  if (vorigeFileId) await removeBackgroundImage(vorigeFileId);
+  return fileId;
+}
+
+async function removeBackgroundImage(fileId) {
+  const doc = await FileDoc.findOne({ id: fileId });
+  if (!doc) return;
+  if (doc.storage === "gridfs") await deleteFromGridFS(doc.stored);
+  await FileDoc.deleteOne({ id: fileId });
+  await recalcStorage();
+}
+
 async function getStraat(date) {
   let doc = await Straat.findOne({ date });
-  if (!doc) doc = await Straat.create({ date, items: [], contributors: [] });
+  if (!doc) {
+    const s = await getSettings();
+    doc = await Straat.create({
+      date, items: [], contributors: [],
+      bgPreset: s.straatBgPreset || "", bgFileId: s.straatBgFileId || null,
+    });
+  }
   return doc;
 }
 
@@ -520,7 +573,7 @@ app.post("/me/pfp", requireAuth, memUpload.single("pfp"), async (req, res) => {
 app.get("/straat", requireAuth, async (req, res) => {
   const date = todayKey();
   const doc = await getStraat(date);
-  res.json({ date, items: doc.items, contributors: doc.contributors });
+  res.json({ date, items: doc.items, contributors: doc.contributors, bgPreset: doc.bgPreset, bgFileId: doc.bgFileId });
 });
 
 // archief — elke dag, nieuwste eerst
@@ -548,7 +601,51 @@ app.get("/straat/chat", requireAuth, async (req, res) => {
 app.get("/straat/:date", requireAuth, async (req, res) => {
   const doc = await Straat.findOne({ date: req.params.date });
   if (!doc) return res.status(404).json({ error: "die dag bestaat niet" });
-  res.json({ date: doc.date, items: doc.items, contributors: doc.contributors, readonly: doc.date !== todayKey() });
+  res.json({ date: doc.date, items: doc.items, contributors: doc.contributors, readonly: doc.date !== todayKey(), bgPreset: doc.bgPreset, bgFileId: doc.bgFileId });
+});
+
+// achtergrond van de straat — alleen de beheerder
+app.post("/straat/background", requireAdmin, (req, res) => {
+  groupUpload.single("image")(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "afbeelding is te groot (max 5 MB)" : err.message });
+    }
+    try {
+      const date = todayKey();
+      const doc = await getStraat(date);
+      const instellingen = await getSettings();
+      const vorige = doc.bgFileId;
+
+      if (req.file) {
+        if ((req.file.mimetype || "").startsWith("image/") && req.file.size > IMAGE_MAX) {
+          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ error: "afbeelding is te groot (max 5 MB)" });
+        }
+        const fileId = await saveBackgroundImage(req.file, STRAAT_BG_GROUP, req.username, vorige);
+        doc.bgFileId = fileId; doc.bgPreset = "";
+        instellingen.straatBgFileId = fileId; instellingen.straatBgPreset = "";
+      } else if (req.body.clear) {
+        if (vorige) await removeBackgroundImage(vorige);
+        doc.bgFileId = null; doc.bgPreset = "";
+        instellingen.straatBgFileId = null; instellingen.straatBgPreset = "";
+      } else {
+        const preset = String(req.body.preset || "");
+        if (!PRESETS.includes(preset)) return res.status(400).json({ error: "onbekende achtergrond" });
+        if (vorige) await removeBackgroundImage(vorige);
+        doc.bgPreset = preset; doc.bgFileId = null;
+        instellingen.straatBgPreset = preset; instellingen.straatBgFileId = null;
+      }
+
+      await doc.save();
+      await instellingen.save();
+      const payload = { bgPreset: doc.bgPreset, bgFileId: doc.bgFileId };
+      io.to("straat").emit("straat:background", payload);
+      res.json(Object.assign({ success: true }, payload));
+    } catch (e) {
+      console.error("straat achtergrond:", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
 });
 
 // beheerder mag het bord van vandaag leegmaken
@@ -662,6 +759,7 @@ app.get("/groups/:id", requireAuth, async (req, res) => {
   res.json({
     group: {
       id: g.id, name: g.name, code: g.code, owner: g.owner,
+      bgPreset: g.bgPreset, bgFileId: g.bgFileId,
       members: g.members.map(m => ({ username: m, displayName: NAMES[m] || m })),
     },
   });
@@ -764,13 +862,66 @@ app.post("/groups/:id/upload", requireAuth, (req, res) => {
   });
 });
 
+// achtergrond van een groepchat — iedereen in de groep mag hem veranderen
+app.post("/groups/:id/background", requireAuth, (req, res) => {
+  groupUpload.single("image")(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "afbeelding is te groot (max 5 MB)" : err.message });
+    }
+    try {
+      const g = await Group.findOne({ id: req.params.id });
+      if (!g || !g.members.includes(req.username)) {
+        if (req.file) fs.unlinkSync(req.file.path);
+        return res.status(403).json({ error: "geen toegang" });
+      }
+      const vorige = g.bgFileId;
+
+      if (req.file) {
+        if (!(req.file.mimetype || "").startsWith("image/")) {
+          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ error: "dit is geen afbeelding" });
+        }
+        if (req.file.size > IMAGE_MAX) {
+          fs.unlinkSync(req.file.path);
+          return res.status(400).json({ error: "afbeelding is te groot (max 5 MB)" });
+        }
+        if (storageUsed + req.file.size > STORAGE_BUDGET) {
+          fs.unlinkSync(req.file.path);
+          return res.status(507).json({ error: "de opslag zit vol, vraag de beheerder om ruimte vrij te maken" });
+        }
+        g.bgFileId = await saveBackgroundImage(req.file, g.id, req.username, vorige);
+        g.bgPreset = "";
+      } else if (req.body.clear) {
+        if (vorige) await removeBackgroundImage(vorige);
+        g.bgFileId = null; g.bgPreset = "";
+      } else {
+        const preset = String(req.body.preset || "");
+        if (!PRESETS.includes(preset)) return res.status(400).json({ error: "onbekende achtergrond" });
+        if (vorige) await removeBackgroundImage(vorige);
+        g.bgPreset = preset; g.bgFileId = null;
+      }
+
+      await g.save();
+      const payload = { groupId: g.id, bgPreset: g.bgPreset, bgFileId: g.bgFileId, door: NAMES[req.username] || req.username };
+      io.to("group:" + g.id).emit("group:background", payload);
+      res.json(Object.assign({ success: true }, payload));
+    } catch (e) {
+      console.error("groep achtergrond:", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+});
+
 app.get("/files/:id", async (req, res) => {
   const token = req.query.t || req.headers["x-auth-token"];
   if (!token || !tokens[token]) return res.status(401).send("niet ingelogd");
   const f = await FileDoc.findOne({ id: req.params.id });
   if (!f) return res.status(404).send("bestand niet gevonden");
-  const g = await Group.findOne({ id: f.groupId });
-  if (!g || !g.members.includes(tokens[token])) return res.status(403).send("geen toegang");
+  // de achtergrond van de straat is voor iedereen die ingelogd is
+  if (f.groupId !== STRAAT_BG_GROUP) {
+    const g = await Group.findOne({ id: f.groupId });
+    if (!g || !g.members.includes(tokens[token])) return res.status(403).send("geen toegang");
+  }
   res.setHeader("Content-Type", f.mime || "application/octet-stream");
   const inline = (f.mime || "").startsWith("image/");
   res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(f.name)}`);
@@ -982,17 +1133,69 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
   res.json({ users: list, maxEuro: MAX_EURO });
 });
 
-// naam + wachtwoord in één keer — dit vult de beheerder per student in
+/* De gebruikersnaam is de sleutel waar bijna alles aan hangt, dus bij het
+   hernoemen moet elke verwijzing mee. Anders raakt iemand zijn groepen,
+   berichten, tekeningen of krediet kwijt. */
+async function renameUser(oud, nieuw) {
+  await UserAuth.updateOne({ username: oud }, { $set: { username: nieuw } });
+  await UserData.updateOne({ username: oud }, { $set: { username: nieuw } });
+  await Session.updateMany({ username: oud }, { $set: { username: nieuw } });
+  await GroupMessage.updateMany({ username: oud }, { $set: { username: nieuw } });
+  await StraatChat.updateMany({ username: oud }, { $set: { username: nieuw } });
+  await FileDoc.updateMany({ uploader: oud }, { $set: { uploader: nieuw } });
+  await Group.updateMany({ owner: oud }, { $set: { owner: nieuw } });
+  await Group.updateMany(
+    { members: oud },
+    { $set: { "members.$[m]": nieuw } },
+    { arrayFilters: [{ m: oud }] }
+  );
+  // tekeningen en teksten op de straat verwijzen ook naar de gebruikersnaam
+  await Straat.updateMany(
+    { "items.u": oud },
+    { $set: { "items.$[e].u": nieuw } },
+    { arrayFilters: [{ "e.u": oud }] }
+  );
+  // wie op dit moment ingelogd is, blijft ingelogd
+  Object.keys(tokens).forEach(t => { if (tokens[t] === oud) tokens[t] = nieuw; });
+  await syncUsers();
+}
+
+// naam, gebruikersnaam en wachtwoord — dit vult de beheerder per student in
 app.post("/admin/users/:username", requireAdmin, async (req, res) => {
   const { username } = req.params;
-  const { displayName, password } = req.body;
+  const { displayName, password, newUsername } = req.body;
   const u = await UserAuth.findOne({ username });
   if (!u) return res.status(404).json({ error: "student niet gevonden" });
+
+  let hernoemd = null;
+  if (typeof newUsername === "string" && newUsername.trim() && newUsername.trim() !== username) {
+    const nieuw = newUsername.trim();
+    if (!/^[a-z0-9._-]{2,24}$/i.test(nieuw)) {
+      return res.status(400).json({ error: "gebruikersnaam mag alleen letters, cijfers, punt, streepje of liggend streepje bevatten (2-24 tekens)" });
+    }
+    if (await UserAuth.findOne({ username: nieuw })) {
+      return res.status(400).json({ error: "die gebruikersnaam bestaat al" });
+    }
+    // 'dev' wordt bij elke start opnieuw aangemaakt, dus hernoemen zou een
+    // tweede beheerdersaccount met standaardwachtwoord opleveren
+    if (username === "dev") {
+      return res.status(400).json({ error: "het hoofdbeheerdersaccount 'dev' kan niet hernoemd worden" });
+    }
+    // eerst de andere velden op het oude document, daarna pas hernoemen
+    if (typeof displayName === "string" && displayName.trim()) u.displayName = displayName.trim();
+    if (typeof password === "string" && password.trim()) u.password = password.trim();
+    await u.save();
+    await renameUser(username, nieuw);
+    hernoemd = nieuw;
+    const na = await UserAuth.findOne({ username: nieuw });
+    return res.json({ success: true, username: nieuw, renamedTo: hernoemd, displayName: na.displayName, password: na.password });
+  }
+
   if (typeof displayName === "string" && displayName.trim()) u.displayName = displayName.trim();
   if (typeof password === "string" && password.trim()) u.password = password.trim();
   await u.save();
   await syncUsers();
-  res.json({ success: true, displayName: u.displayName, password: u.password });
+  res.json({ success: true, username, displayName: u.displayName, password: u.password });
 });
 
 app.post("/admin/users/:username/pfp", requireAdmin, memUpload.single("pfp"), async (req, res) => {
@@ -1118,7 +1321,7 @@ io.on("connection", (socket) => {
   socket.on("straat:join", async () => {
     socket.join("straat");
     const doc = await getStraat(todayKey());
-    socket.emit("straat:state", { date: doc.date, items: doc.items, contributors: doc.contributors });
+    socket.emit("straat:state", { date: doc.date, items: doc.items, contributors: doc.contributors, bgPreset: doc.bgPreset, bgFileId: doc.bgFileId });
     broadcastPresence();
   });
 
