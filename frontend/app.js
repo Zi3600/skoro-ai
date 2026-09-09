@@ -1,8 +1,14 @@
 /* ------------------------------------------------------------------ *
- *  drerries-ai — client
+ *  lokaal b16 — client
+ *
+ *  NAAMGEVING: "de straat" heet nu "het lokaal". In alles wat je op het
+ *  scherm ziet staat lokaal; in de code staat nog straat, want de
+ *  socket-events en de Mongo-collectie heten zo. Straat = lokaal.
+ *  Om dezelfde reden heet de doekoeverzamelaar in de code nog heist.
  * ------------------------------------------------------------------ */
 
-const BACKEND = location.protocol === "file:" ? "https://skoro-ai.onrender.com" : location.origin;
+// waar de backend staat, zie frontend/config.js
+const BACKEND = window.BACKEND_URL || location.origin;
 
 let token = localStorage.getItem("token");
 if (!token) location.replace("index.html");
@@ -11,8 +17,26 @@ let me = {
   username: localStorage.getItem("username") || "",
   displayName: localStorage.getItem("displayName") || "",
   isAdmin: localStorage.getItem("isAdmin") === "1",
+  role: localStorage.getItem("role") || "student",
   pfp: null,
 };
+
+/* De bril van Maes-AI. Vroeger een sparkle (✦), nu een bril — op alle
+   plekken dezelfde, dus staat hij hier één keer. currentColor, zodat hij
+   wit is op een gekleurde avatar en blauw in de sidebar. */
+const MAES_BRIL =
+  '<svg viewBox="0 0 24 12" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+  'stroke-linecap="round" aria-hidden="true">' +
+  '<circle cx="6" cy="6.4" r="4.1"/><circle cx="18" cy="6.4" r="4.1"/>' +
+  '<path d="M10.1 6.4h3.8"/><path d="M1.9 6.4 0.7 4.4"/><path d="M22.1 6.4l1.2-2"/></svg>';
+
+// zet de bril in een element (span, avatar, leeg scherm)
+function zetBril(el) {
+  if (!el) return;
+  el.classList.add("maes-bril");
+  el.innerHTML = MAES_BRIL;
+  el.style.background = el.style.background || "";
+}
 
 let socket = null;
 let groups = [];
@@ -151,20 +175,37 @@ function toggleTheme() {
 }
 applyTheme();
 
+// de brillen die in app.html leeg staan meteen invullen
+document.querySelectorAll(".maes-bril").forEach(el => { if (!el.innerHTML.trim()) el.innerHTML = MAES_BRIL; });
+
 /* ------------------------------ sidebar --------------------------- */
 
 function openSidebar() { $("sidebar").classList.add("open"); $("scrim").classList.add("on"); }
 function closeSidebar() { $("sidebar").classList.remove("open"); $("scrim").classList.remove("on"); }
 
-let myBudget = 0.25;   // groeit mee met wat je in Code Heist verdient
+let myBudget = 0.25;   // groeit mee met wat je in de doekoeverzamelaar verdient
 
 function setCredit(pct, budget) {
+  /* Een gast heeft geen krediet in centen maar één voorbeeldvraag. Een
+     balkje van 25 cent zou hem iets beloven wat hij niet krijgt. */
+  if (me.rechten && me.rechten.maes === "proef") {
+    const over = maesOver === null ? 1 : maesOver;
+    $("credit-titel").textContent = "Maes-AI proberen";
+    $("credit-label").textContent = over > 0
+      ? (over === 1 ? "1 vraag over" : over + " vragen over")
+      : "gebruikt";
+    const b = $("credit-bar");
+    b.style.width = over > 0 ? "100%" : "0%";
+    b.style.background = over > 0 ? "var(--green)" : "var(--red)";
+    return;
+  }
+
   if (budget) myBudget = budget;
   if (pct === undefined || pct === null) return;
   const bar = $("credit-bar");
   bar.style.width = Math.min(pct, 100) + "%";
   bar.style.background = pct < 55 ? "var(--green)" : pct < 85 ? "var(--yellow)" : "var(--red)";
-  // in centen tonen, anders zie je niet dat een gehaalde heist er krediet bij zet
+  // in centen tonen, anders zie je niet dat een verzamelde doekoe er krediet bij zet
   const overCent = Math.max(0, myBudget * (1 - Math.min(pct, 100) / 100) * 100);
   $("credit-label").textContent = overCent.toFixed(overCent < 10 ? 1 : 0) + " cent over";
   const sb = $("settings-bar");
@@ -183,7 +224,8 @@ function paintAvatar(el, name, pfp) {
 
 /* ------------------------------ routing --------------------------- */
 
-const VIEWS = ["straat", "archief", "archiefdag", "groepen", "groep", "maes", "heist", "instellingen", "beheer"];
+const VIEWS = ["straat", "archief", "archiefdag", "groepen", "groep", "maes", "maesuitleg",
+               "icw", "heist", "maasai", "instellingen", "beheer"];
 
 function go(hash) { closeSidebar(); if (location.hash === hash) route(); else location.hash = hash; }
 
@@ -201,28 +243,49 @@ function crumb(parts) {
   ).join("");
 }
 
+/* Wie waar mag komen. De server controleert dit opnieuw bij elke aanvraag —
+   dit hier is alleen om je niet op een scherm te zetten waar niets werkt. */
+function magIk(recht) { return !!(me.rechten && me.rechten[recht]); }
+
 function route() {
-  const h = location.hash.replace(/^#\/?/, "") || "straat";
+  const h = location.hash.replace(/^#\/?/, "") || (magIk("lokaalSchrijven") ? "lokaal" : "icw");
   const [head, arg] = h.split("/");
   $("topbar-actions").innerHTML = "";
   if (head !== "groep") activeGroupId = null;
+  sluitModPop();
 
   if (head === "archief" && arg) { showView("archiefdag"); crumb(["archief", arg]); openArchiefDag(arg); return; }
   if (head === "archief") { showView("archief"); crumb(["archief"]); loadArchief(); return; }
-  if (head === "groepen") { showView("groepen"); crumb(["groepen"]); renderGroups(); return; }
-  if (head === "groep" && arg) { showView("groep"); openGroup(arg); return; }
-  if (head === "maes") { showView("maes"); crumb(["Maes-AI"]); openMaes(); return; }
-  if (head === "heist") { showView("heist"); crumb(["Code Heist"]); openHeist(); return; }
-  if (head === "instellingen") { showView("instellingen"); crumb(["instellingen"]); openSettings(); return; }
-  if (head === "beheer") { showView("beheer"); crumb(["beheer"]); loadAdmin(); return; }
+  if (head === "icw") { showView("icw"); crumb(["over ICW"]); openIcw(); return; }
+  if (head === "maes-uitleg") { showView("maesuitleg"); crumb(["wat is Maes-AI"]); openMaesUitleg(); return; }
 
+  if (head === "groepen" && magIk("groepen")) { showView("groepen"); crumb(["groepen"]); renderGroups(); return; }
+  if (head === "groep" && arg && magIk("groepen")) { showView("groep"); openGroup(arg); return; }
+  // een gast krijgt geen chatvenster maar de uitlegpagina met één voorbeeldvraag
+  if (head === "maes") {
+    if (me.rechten && me.rechten.maes === "proef") { go("#/maes-uitleg"); return; }
+    showView("maes"); crumb(["Maes-AI"]); openMaes(); return;
+  }
+  // "heist" blijft werken voor wie de oude link nog in zijn geschiedenis heeft
+  if ((head === "doekoe" || head === "heist") && magIk("doekoe")) {
+    showView("heist"); crumb(["doekoeverzamelaar"]); openHeist(); return;
+  }
+  if (head === "maasai") { showView("maasai"); crumb(["MaasAI"]); openDownloads(); return; }
+  if (head === "instellingen") { showView("instellingen"); crumb(["instellingen"]); openSettings(); return; }
+  if (head === "beheer" && me.isAdmin) { showView("beheer"); crumb(["beheer"]); loadAdmin(); return; }
+
+  // het gastbord, en anders het lokaal
+  const bord = head === "gastbord" && magIk("gastbord") ? "gast" : "lokaal";
   showView("straat");
-  crumb(["straat"]);
+  $("straat-titel").textContent = BORD_TEKST[bord].titel;
+  crumb([BORD_TEKST[bord].titel]);
+  document.querySelectorAll(".sb-item[data-route='straat']").forEach(b =>
+    b.classList.toggle("active", b.dataset.bord === bord));
   if (me.isAdmin) {
     $("topbar-actions").innerHTML =
       '<button class="btn ghost sm" onclick="openBackgroundPicker(\'straat\', null)">achtergrond</button>';
   }
-  openStraat();
+  openBord(bord);
 }
 
 window.addEventListener("hashchange", route);
@@ -232,15 +295,29 @@ window.addEventListener("hashchange", route);
 async function boot() {
   try {
     const info = await api("/me");
-    me = { username: info.username, displayName: info.displayName, isAdmin: info.isAdmin, pfp: info.pfp };
+    me = {
+      username: info.username, displayName: info.displayName,
+      isAdmin: info.isAdmin, role: info.role || "student", pfp: info.pfp,
+      rechten: info.rechten || {},
+    };
+    cooldownMs = info.cooldownMs || 0;
+    maesOver = info.maesOver;
     localStorage.setItem("displayName", me.displayName);
     localStorage.setItem("isAdmin", me.isAdmin ? "1" : "0");
+    localStorage.setItem("role", me.role);
   } catch (e) { return; }
 
+  const ROL_LABEL = { gast: "gast", icw: "junior ICW" };
   $("me-name").textContent = me.displayName;
-  $("me-sub").textContent = me.isAdmin ? "beheerder" : me.username;
+  $("me-sub").textContent = me.isAdmin ? "beheerder" : (ROL_LABEL[me.role] || me.username);
   paintAvatar($("me-av"), me.displayName, me.pfp);
-  if (me.isAdmin) { $("sb-beheer").hidden = false; $("clear-tool").hidden = false; }
+  if (me.isAdmin) {
+    $("sb-beheer").hidden = false;
+    $("clear-tool").hidden = false;
+    $("mod-tool").hidden = false;
+    $("sc-clear").hidden = false;
+  }
+  bouwZijbalk();
   setCredit(0);
   api("/me").then(i => setCredit(i.pct, i.budget)).catch(() => {});
 
@@ -250,18 +327,68 @@ async function boot() {
   route();
 }
 
+/* De zijbalk hangt af van wie je bent. Een gast heeft geen groepen en geen
+   doekoeverzamelaar, maar wél een eigen bord; de klas heeft dat gastbord
+   niet nodig. Alles staat in app.html en wordt hier alleen aan- of
+   uitgezet, zodat er één plek is waar de menu-items leven. */
+function bouwZijbalk() {
+  const toon = (id, ja) => { const el = $(id); if (el) el.hidden = !ja; };
+  toon("sb-gastbord", magIk("gastbord"));
+  toon("sb-groepen-label", magIk("groepen"));
+  toon("sb-groepen-nieuw", magIk("groepen"));
+  toon("sb-maes", me.rechten.maes === "vol");
+  toon("sb-maes-uitleg", me.rechten.maes === "proef");
+  toon("sb-doekoe", magIk("doekoe"));
+  if (!magIk("groepen")) $("sb-groups").innerHTML = "";
+}
+
 function initSocket() {
   socket = io(BACKEND, { auth: { token } });
 
-  socket.on("straat:state", onStraatState);
-  socket.on("straat:item", onStraatItem);
-  socket.on("straat:presence", renderPresence);
-  socket.on("straat:background", bg => applyStraatBackground(bg));
-  socket.on("group:background", onGroupBackground);
-  socket.on("straat:cleared", () => { straatItems = []; redrawStraat(); updateStraatFoot([]); });
+  /* De bord-events dragen allemaal een `bord` mee. Je kan op meer dan één
+     bord ingeschreven staan, maar je kijkt er maar naar één — dus alles
+     wat van een ander bord komt, negeren we hier meteen. */
+  const ditBord = d => d && d.bord === huidigBord;
 
-  socket.on("straat:chat", onStraatChat);
-  socket.on("straat:chat-typing", onStraatChatTyping);
+  socket.on("bord:state", d => { if (ditBord(d)) onBordState(d); });
+  socket.on("bord:item", d => { if (ditBord(d)) onBordItem(d.item); });
+  socket.on("bord:presence", d => { if (ditBord(d)) renderPresence(d.lijst); });
+  socket.on("bord:background", d => { if (ditBord(d)) applyStraatBackground(d); });
+  socket.on("group:background", onGroupBackground);
+  socket.on("bord:cleared", d => {
+    if (!ditBord(d)) return;
+    straatItems = [];
+    redrawStraat();
+    updateStraatFoot([]);
+    if (modAan) tekenModLabels();
+  });
+
+  socket.on("bord:chat", d => { if (ditBord(d)) onStraatChat(d.msg); });
+  socket.on("bord:chat-typing", d => { if (ditBord(d)) onStraatChatTyping(d); });
+
+  // één ding tegelijk
+  socket.on("bord:cooldown", d => { if (ditBord(d)) onCooldown(d); });
+
+  // de server weigert wat je niet mag; hij zegt er ook bij waarom
+  socket.on("bord:geweigerd", d => { if (ditBord(d)) toast(d.reden); });
+
+  // moderatie door de beheerder
+  socket.on("bord:item-weg", d => {
+    if (!ditBord(d)) return;
+    straatItems = straatItems.filter(i => i.id !== d.id);
+    redrawStraat();
+    updateStraatFoot(huidigeContribs());
+    if (modAan) tekenModLabels();
+    sluitModPop();
+  });
+  socket.on("bord:chat-weg", d => {
+    if (!ditBord(d)) return;
+    const el = $("sc-" + d.id);
+    if (el) el.remove();
+    straatChatCount = Math.max(0, straatChatCount - 1);
+    $("sc-count").textContent = straatChatCount ? straatChatCount + "" : "";
+  });
+  socket.on("bord:chat-leeg", d => { if (ditBord(d)) loadStraatChat(); });
 
   socket.on("group:message", onGroupMessage);
   socket.on("group:typing", onGroupTyping);
@@ -283,14 +410,18 @@ async function logout() {
 }
 
 /* ================================================================== *
- *  DE STRAAT — dagelijkse tekening + typen
+ *  HET LOKAAL — dagelijkse tekening + typen
+ *  (heet in de code nog straat, zie de kop van dit bestand)
  * ================================================================== */
 
 const CANVAS_W = 1600, CANVAS_H = 900;
 const PALETTE = ["#37352f", "#2383e2", "#0f7b6c", "#cb912f", "#e03e3e", "#6940a5", "#d9730d", "#ffffff"];
 const SIZES = [2, 4, 8, 16];
 
+let huidigBord = "lokaal";     // "lokaal" of "gast"
+let magSchrijven = false;      // mag je op het huidige bord schrijven? tot de server het zegt: nee
 let straatItems = [];
+let straatContribs = [];
 let straatBg = { bgPreset: "", bgFileId: null };
 let straatBgImage = null;
 let straatJoined = false;
@@ -301,6 +432,56 @@ let drawing = false;
 let currentPts = [];
 let textPos = null;
 let activityTimer = null;
+
+/* ---- één ding tegelijk, dan 30 seconden wachten ---- */
+let cooldownMs = 0;        // 0 voor de beheerder
+let cooldownTot = 0;       // tijdstip waarop je weer mag
+let cooldownTimer = null;
+
+function magIkNu() { return Date.now() >= cooldownTot; }
+function seconden() { return Math.max(0, Math.ceil((cooldownTot - Date.now()) / 1000)); }
+
+// de server zegt hoe lang je nog moet wachten; de browser telt alleen af
+function onCooldown({ over, geweigerd }) {
+  cooldownTot = Date.now() + (over || 0);
+  if (geweigerd) toast(`nog ${seconden()} seconden — je mag één ding tegelijk`);
+  tekenCooldown();
+}
+
+function tekenCooldown() {
+  const chip = $("cooldown");
+  const wrap = $("canvas-wrap");
+  if (!chip) return;
+
+  // de beheerder heeft geen wachttijd, dus ook geen tellertje
+  if (!cooldownMs) { chip.hidden = true; wrap.classList.remove("wacht"); return; }
+
+  chip.hidden = false;
+  const over = seconden();
+  if (over > 0) {
+    chip.classList.remove("klaar");
+    chip.style.setProperty("--cd", String(Math.round(((cooldownTot - Date.now()) / cooldownMs) * 100)));
+    $("cooldown-txt").textContent = `nog ${over}s`;
+    wrap.classList.add("wacht");
+    if (!cooldownTimer) cooldownTimer = setInterval(tekenCooldown, 250);
+  } else {
+    chip.classList.add("klaar");
+    chip.style.setProperty("--cd", "0");
+    $("cooldown-txt").textContent = "je bent aan de beurt";
+    wrap.classList.remove("wacht");
+    clearInterval(cooldownTimer);
+    cooldownTimer = null;
+  }
+}
+
+// blokkeer tekenen/typen zolang de wachttijd loopt, met uitleg erbij
+function blokkeerAlsWacht() {
+  if (magIkNu()) return false;
+  toast(`nog ${seconden()} seconden — je mag één ding tegelijk`);
+  return true;
+}
+
+function huidigeContribs() { return straatContribs; }
 
 const canvas = $("straat-canvas");
 const ctx = canvas.getContext("2d");
@@ -337,35 +518,96 @@ function setTool(t) {
 }
 
 let presenceHeartbeat = null;
-function openStraat() {
+
+/* Het lokaal en het gastbord zijn hetzelfde scherm met een andere inhoud.
+   `huidigBord` zegt naar welk van de twee je op dit moment kijkt; alles
+   wat naar de server gaat draagt dat mee. */
+function openBord(bordId) {
   if (!socket) return;
-  socket.emit("straat:join");
-  socket.emit("straat:activity", "idle");
+  if (huidigBord !== bordId) {
+    socket.emit("bord:leave", { bord: huidigBord });
+    // niets van het vorige bord laten staan terwijl het nieuwe binnenkomt
+    straatItems = [];
+    straatContribs = [];
+    redrawStraat();
+    sluitModPop();
+  }
+  huidigBord = bordId;
+  /* Meteen de juiste stand zetten in plaats van te wachten op de server.
+     Dezelfde regel als die de server hanteert, dus geen flits van een
+     werkbalk die je toch niet mag gebruiken. bord:state bevestigt het zo. */
+  zetSchrijfrecht(bordId === "gast" ? magIk("gastbord") : magIk("lokaalSchrijven"));
+  socket.emit("bord:join", { bord: bordId });
+  socket.emit("bord:activity", { bord: bordId, activity: "idle" });
   straatJoined = true;
   $("straat-live").hidden = false;
   loadStraatChat();
-  // laat de anderen zien dat je meekijkt zolang je op de straat staat
+  // laat de anderen zien dat je meekijkt zolang je op het bord staat
   clearInterval(presenceHeartbeat);
   presenceHeartbeat = setInterval(() => {
     if ($("v-straat").hidden) { clearInterval(presenceHeartbeat); return; }
     if (drawing || caret.style.display === "block") return;   // niet overschrijven tijdens tekenen/typen
-    socket.emit("straat:activity", "idle");
+    socket.emit("bord:activity", { bord: huidigBord, activity: "idle" });
   }, 5000);
 }
 
-function onStraatState(state) {
-  straatItems = state.items || [];
-  applyStraatBackground({ bgPreset: state.bgPreset, bgFileId: state.bgFileId });
-  $("straat-sub").textContent =
-    `${fmtDateLong(state.date)} — iedereen tekent en typt hier live mee. morgen begint een nieuwe en gaat deze naar het archief.`;
-  redrawStraat();
-  updateStraatFoot(state.contributors || []);
+const BORD_TEKST = {
+  lokaal: {
+    titel: "lokaal",
+    sub: "iedereen tekent en typt hier live mee. morgen begint een nieuw bord en gaat dit naar het archief.",
+    kijken: "je kijkt mee in het lokaal van de klas. tekenen en chatten doe je op het gastbord.",
+    chatPlaceholder: "zeg iets tegen iedereen in het lokaal...",
+    chatAlleenLezen: "de chat van het lokaal lees je mee",
+  },
+  gast: {
+    titel: "gastbord",
+    sub: "je eigen bord, met je eigen chat. teken, typ en praat hier vrij mee.",
+    kijken: "",
+    chatPlaceholder: "zeg iets tegen de andere gasten...",
+    chatAlleenLezen: "",
+  },
+};
+
+// zet het scherm in kijk- of schrijfstand
+function zetSchrijfrecht(mag) {
+  magSchrijven = !!mag;
+  const t = BORD_TEKST[huidigBord] || BORD_TEKST.lokaal;
+
+  $("straat-toolbar").hidden = !magSchrijven;
+  $("canvas-wrap").classList.toggle("kijken", !magSchrijven);
+  $("sc-composer").hidden = !magSchrijven;
+  $("bord-kijk").hidden = magSchrijven || !t.kijken;
+  if (t.kijken) $("bord-kijk-txt").textContent = t.kijken;
+  $("sc-lezen").hidden = magSchrijven || !t.chatAlleenLezen;
+  if (t.chatAlleenLezen) $("sc-lezen").textContent = t.chatAlleenLezen;
+  $("sc-input").placeholder = t.chatPlaceholder;
+  if (!magSchrijven) { hideCaret(); drawing = false; }
 }
 
-function onStraatItem(item) {
+function onBordState(state) {
+  straatItems = state.items || [];
+  applyStraatBackground({ bgPreset: state.bgPreset, bgFileId: state.bgFileId });
+  const t = BORD_TEKST[huidigBord] || BORD_TEKST.lokaal;
+  $("straat-sub").textContent = `${fmtDateLong(state.date)} — ${t.sub}`;
+  zetSchrijfrecht(state.schrijven);
+  redrawStraat();
+  updateStraatFoot(state.contributors || []);
+  // na een refresh loopt de wachttijd gewoon door waar hij stond
+  if (state.cooldownMs !== undefined) cooldownMs = state.cooldownMs;
+  cooldownTot = Date.now() + (state.cooldown || 0);
+  tekenCooldown();
+  if (modAan) tekenModLabels();
+}
+
+function onBordItem(item) {
   straatItems.push(item);
   drawItem(ctx, item, CANVAS_W, CANVAS_H);
   $("straat-count").textContent = countLabel(straatItems);
+  if (item.n && !straatContribs.includes(item.n)) {
+    straatContribs.push(item.n);
+    updateStraatFoot(straatContribs);
+  }
+  if (modAan) tekenModLabels();
 }
 
 function countLabel(items) {
@@ -375,8 +617,10 @@ function countLabel(items) {
 }
 
 function updateStraatFoot(contribs) {
+  straatContribs = contribs || [];
   $("straat-count").textContent = countLabel(straatItems);
-  $("straat-contribs").textContent = contribs.length ? "vandaag: " + contribs.join(", ") : "nog niemand vandaag";
+  $("straat-contribs").textContent = straatContribs.length
+    ? "vandaag: " + straatContribs.join(", ") : "nog niemand vandaag";
 }
 
 function clearCanvas(c, w, h, bg) {
@@ -472,12 +716,15 @@ function canvasPoint(e) {
 
 function pingActivity(kind) {
   if (!socket) return;
-  socket.emit("straat:activity", kind);
+  socket.emit("bord:activity", { bord: huidigBord, activity: kind });
   clearTimeout(activityTimer);
-  activityTimer = setTimeout(() => socket.emit("straat:activity", "idle"), 3500);
+  activityTimer = setTimeout(() => socket.emit("bord:activity", { bord: huidigBord, activity: "idle" }), 3500);
 }
 
 canvas.addEventListener("pointerdown", e => {
+  // in moderatiestand tekent de beheerder niet, hij prikt dingen aan
+  if (modAan) { kiesModItem(e); return; }
+  if (blokkeerAlsWacht()) return;
   if (tool === "text") { showCaret(e); return; }
   drawing = true;
   canvas.setPointerCapture(e.pointerId);
@@ -506,7 +753,10 @@ function endStroke() {
   if (!drawing) return;
   drawing = false;
   if (currentPts.length) {
-    socket.emit("straat:stroke", { pts: currentPts, c: penColor, w: penSize });
+    socket.emit("bord:stroke", { bord: huidigBord, pts: currentPts, c: penColor, w: penSize });
+    // vast blokkeren tot de server bevestigt; anders teken je in die halve
+    // seconde nog vijf lijnen die daarna toch geweigerd worden
+    if (cooldownMs) { cooldownTot = Date.now() + cooldownMs; tekenCooldown(); }
   }
   currentPts = [];
   pingActivity("idle");
@@ -514,11 +764,12 @@ function endStroke() {
 canvas.addEventListener("pointerup", endStroke);
 canvas.addEventListener("pointercancel", endStroke);
 
-/* ----- typen op de straat ----- */
+/* ----- typen in het lokaal ----- */
 const caret = $("text-caret");
 const textInput = $("text-input");
 
 function showCaret(e) {
+  if (blokkeerAlsWacht()) return;
   const r = canvas.getBoundingClientRect();
   const p = canvasPoint(e);
   textPos = p;
@@ -542,11 +793,13 @@ textInput.addEventListener("keydown", e => {
   e.preventDefault();
   const text = textInput.value.trim();
   if (text && textPos) {
-    socket.emit("straat:text", {
-      text, x: textPos[0], y: textPos[1],
+    if (blokkeerAlsWacht()) { hideCaret(); return; }
+    socket.emit("bord:text", {
+      bord: huidigBord, text, x: textPos[0], y: textPos[1],
       c: penColor === "#ffffff" ? "#9b9a97" : penColor,
       s: Math.max(penSize * 7, 20),
     });
+    if (cooldownMs) { cooldownTot = Date.now() + cooldownMs; tekenCooldown(); }
   }
   hideCaret();
   pingActivity("idle");
@@ -559,7 +812,7 @@ function renderPresence(list) {
         const label = p.activity === "typing" ? "typt" : p.activity === "drawing" ? "tekent" : "kijkt mee";
         return `<span class="pchip ${p.activity}"><span class="dot"></span>${esc(p.displayName)} ${label}</span>`;
       }).join("")
-    : '<span class="pchip"><span class="dot"></span>je bent alleen op straat</span>';
+    : `<span class="pchip"><span class="dot"></span>je bent alleen ${huidigBord === "gast" ? "op het gastbord" : "in het lokaal"}</span>`;
 }
 
 function undoMine() {
@@ -575,12 +828,140 @@ function undoMine() {
 }
 
 async function clearStraat() {
-  if (!confirm("straat van vandaag helemaal leegmaken?")) return;
-  try { await api("/straat/clear", { method: "POST" }); toast("straat is leeg"); }
+  if (!confirm("het lokaal van vandaag helemaal leegmaken?")) return;
+  try { await api(`/bord/${huidigBord}/clear`, { method: "POST" }); toast("het bord is leeg"); }
   catch (e) { toast(e.message); }
 }
 
-/* --------------------- publieke chat op de straat ------------------ */
+/* ====================== moderatie (alleen beheer) ================== *
+ *  De beheerder zet "wie wat" aan. Dan hangt er bij elk ding op het bord
+ *  een naamlabel en klik je iets aan om het weg te halen. Zo hoeft er
+ *  niet meer voor één misplaatste tekening een heel bord leeg.
+ * ================================================================== */
+
+let modAan = false;
+let modItem = null;   // het aangeklikte item
+
+function toggleModeratie() {
+  if (!me.isAdmin) return;
+  modAan = !modAan;
+  $("mod-tool").classList.toggle("on", modAan);
+  $("canvas-wrap").classList.toggle("modereren", modAan);
+  $("mod-laag").hidden = !modAan;
+  $("mod-paneel").hidden = !modAan;
+  sluitModPop();
+  if (modAan) { tekenModLabels(); laadModeratie(); }
+  else hideCaret();
+}
+
+// het punt waar een item "zit": bij een lijn het midden, bij tekst net
+// bóven de regel — anders staat het label over de tekst die je beoordeelt
+function ankerVan(item) {
+  if (item.t === "x") return [item.x, item.y - (item.s || 28) * 1.45];
+  const pts = item.pts || [];
+  if (!pts.length) return [0, 0];
+  const p = pts[Math.floor(pts.length / 2)];
+  return [p[0], p[1]];
+}
+
+function tekenModLabels() {
+  const laag = $("mod-laag");
+  if (!laag) return;
+  laag.innerHTML = straatItems.map(i => {
+    const [x, y] = ankerVan(i);
+    return `<span class="mod-label" style="left:${(x / CANVAS_W) * 100}%;top:${(y / CANVAS_H) * 100}%">${esc(i.n || i.u || "?")}</span>`;
+  }).join("");
+}
+
+/* Wat heeft de beheerder aangeklikt? Voor een lijn kijken we naar de
+   punten zelf, voor een tekst naar een ruwe kader eromheen. Van achter
+   naar voor, zodat wat bovenop ligt ook eerst gepakt wordt. */
+function itemOnder(x, y) {
+  for (let idx = straatItems.length - 1; idx >= 0; idx--) {
+    const i = straatItems[idx];
+    if (i.t === "x") {
+      const s = i.s || 28;
+      const breed = String(i.text || "").length * s * 0.58;
+      if (x >= i.x - 6 && x <= i.x + breed + 6 && y >= i.y - s && y <= i.y + s * 0.35) return i;
+    } else {
+      const marge = Math.max((i.w || 3) * 2.5, 14);
+      for (const p of i.pts || []) {
+        if (Math.hypot(p[0] - x, p[1] - y) <= marge) return i;
+      }
+    }
+  }
+  return null;
+}
+
+function kiesModItem(e) {
+  const [x, y] = canvasPoint(e);
+  const item = itemOnder(x, y);
+  if (!item) { sluitModPop(); return; }
+  modItem = item;
+
+  const r = canvas.getBoundingClientRect();
+  const pop = $("mod-pop");
+  pop.hidden = false;
+  pop.style.left = (e.clientX - r.left) + "px";
+  pop.style.top = (e.clientY - r.top) + "px";
+  const wat = item.t === "x" ? `tekst: "${item.text}"` : `een lijn (${(item.pts || []).length} punten)`;
+  pop.innerHTML = `
+    <strong>${esc(item.n || item.u || "onbekend")}</strong>
+    <span class="mp-wat">${esc(wat)} · ${item.ts ? fmtTime(item.ts) : ""}</span>
+    <div class="mp-knoppen">
+      <button class="btn danger sm" onclick="verwijderModItem()">weghalen</button>
+      <button class="btn ghost sm" onclick="sluitModPop()">laten staan</button>
+    </div>`;
+}
+
+function sluitModPop() {
+  const pop = $("mod-pop");
+  if (pop) { pop.hidden = true; pop.innerHTML = ""; }
+  modItem = null;
+}
+
+async function verwijderModItem() {
+  if (!modItem) return;
+  const id = modItem.id;
+  try {
+    const r = await api(`/bord/${huidigBord}/item/${id}`, { method: "DELETE" });
+    toast(`weggehaald (was van ${r.door})`);
+    laadModeratie();
+  } catch (e) { toast(e.message); }
+  sluitModPop();
+}
+
+// het lijstje "wie heeft wat gezet" onder het bord
+async function laadModeratie() {
+  if (!me.isAdmin) return;
+  try {
+    const d = await api(`/bord/${huidigBord}/wie`);
+    $("mod-tel").textContent = `${d.items.length} op het bord`;
+    $("mod-personen").innerHTML = d.personen.length
+      ? d.personen.map(p => `
+          <div class="mp-rij">
+            <span class="naam">${esc(p.displayName)}</span>
+            <span class="wie">${esc(p.username)}</span>
+            <span class="aantal">${p.lijnen} lijn${p.lijnen === 1 ? "" : "en"} · ${p.teksten} tekst${p.teksten === 1 ? "" : "en"}</span>
+          </div>`).join("")
+      : `<div class="mp-leeg">er staat nog niks op het bord vandaag</div>`;
+  } catch (e) { toast(e.message); }
+}
+
+async function clearLokaalChat() {
+  if (!confirm("alle berichten uit de publieke chat weghalen?")) return;
+  try { await api(`/bord/${huidigBord}/chat/clear`, { method: "POST" }); toast("chat is leeg"); }
+  catch (e) { toast(e.message); }
+}
+
+async function verwijderChat(id) {
+  try {
+    const r = await api(`/bord/${huidigBord}/chat/${id}`, { method: "DELETE" });
+    toast(`bericht van ${r.door} weggehaald`);
+  } catch (e) { toast(e.message); }
+}
+
+/* -------------------- publieke chat van het lokaal ----------------- */
 
 let straatChatCount = 0;
 let scLastUser = null;
@@ -592,7 +973,7 @@ async function loadStraatChat() {
   box.innerHTML = "";
   scLastUser = null;
   try {
-    const { messages } = await api("/straat/chat");
+    const { messages } = await api(`/bord/${huidigBord}/chat`);
     straatChatCount = messages.length;
     if (!messages.length) {
       box.innerHTML = `<div class="sc-empty">nog niks gezegd vandaag. begin maar.</div>`;
@@ -600,7 +981,7 @@ async function loadStraatChat() {
     messages.forEach(m => appendStraatChat(m, true));
     $("sc-count").textContent = straatChatCount ? straatChatCount + "" : "";
     box.scrollTop = box.scrollHeight;
-  } catch (e) { /* stil, de straat werkt ook zonder chat */ }
+  } catch (e) { /* stil, het lokaal werkt ook zonder chat */ }
 }
 
 function appendStraatChat(m, silent) {
@@ -636,6 +1017,16 @@ function appendStraatChat(m, silent) {
   tx.textContent = m.text;
   div.appendChild(tx);
 
+  // de beheerder kan elk bericht weghalen
+  if (me.isAdmin) {
+    const weg = document.createElement("button");
+    weg.className = "sc-weg";
+    weg.title = "bericht weghalen";
+    weg.textContent = "×";
+    weg.onclick = () => verwijderChat(m.id);
+    div.appendChild(weg);
+  }
+
   box.appendChild(div);
   if (!silent) box.scrollTop = box.scrollHeight;
 }
@@ -667,8 +1058,8 @@ function sendStraatChat() {
   const input = $("sc-input");
   const text = input.value.trim();
   if (!text || !socket) return;
-  socket.emit("straat:chat", text);
-  socket.emit("straat:chat-typing", false);
+  socket.emit("bord:chat", { bord: huidigBord, text });
+  socket.emit("bord:chat-typing", { bord: huidigBord, on: false });
   input.value = "";
   input.style.height = "auto";
 }
@@ -678,9 +1069,9 @@ $("sc-input").addEventListener("input", e => {
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, 90) + "px";
   if (!socket) return;
-  socket.emit("straat:chat-typing", true);
+  socket.emit("bord:chat-typing", { bord: huidigBord, on: true });
   clearTimeout(scTypingTimer);
-  scTypingTimer = setTimeout(() => socket.emit("straat:chat-typing", false), 2200);
+  scTypingTimer = setTimeout(() => socket.emit("bord:chat-typing", { bord: huidigBord, on: false }), 2200);
 });
 
 $("sc-input").addEventListener("keydown", e => {
@@ -689,7 +1080,7 @@ $("sc-input").addEventListener("keydown", e => {
 
 /* --------------------------- achtergronden ------------------------- */
 /* Iedereen in een groep mag de achtergrond van die groepchat kiezen.
-   De achtergrond van straat mag alleen de beheerder veranderen. */
+   De achtergrond van het lokaal mag alleen de beheerder veranderen. */
 
 const BG_PRESETS = {
   aqua:         { naam: "aqua",         css: "linear-gradient(160deg, #a8e4f7 0%, #c9f0c8 50%, #7ecff5 100%)" },
@@ -704,7 +1095,7 @@ let bgTarget = null;   // { soort: "groep"|"straat", id }
 
 function openBackgroundPicker(soort, id) {
   bgTarget = { soort, id };
-  $("bg-title").textContent = soort === "straat" ? "achtergrond van straat" : "achtergrond van deze groepchat";
+  $("bg-title").textContent = soort === "straat" ? "achtergrond van het lokaal" : "achtergrond van deze groepchat";
   $("bg-sub").textContent = soort === "straat"
     ? "dit is de achtergrond waarop iedereen tekent. alleen jij kan dit veranderen."
     : "iedereen in deze groep kan dit veranderen.";
@@ -720,7 +1111,7 @@ function openBackgroundPicker(soort, id) {
 
 async function pickBackground(preset, clear) {
   if (!bgTarget) return;
-  const url = bgTarget.soort === "straat" ? "/straat/background" : `/groups/${bgTarget.id}/background`;
+  const url = bgTarget.soort === "straat" ? `/bord/${huidigBord}/background` : `/groups/${bgTarget.id}/background`;
   try {
     await api(url, { json: clear ? { clear: true } : { preset } });
     toast(clear ? "achtergrond weggehaald" : "achtergrond aangepast");
@@ -736,7 +1127,7 @@ $("bg-image").addEventListener("change", async e => {
   if (f.size > IMAGE_MAX) { toast("afbeelding is te groot (max 5 MB)"); return; }
   const fd = new FormData();
   fd.append("image", f);
-  const url = bgTarget.soort === "straat" ? "/straat/background" : `/groups/${bgTarget.id}/background`;
+  const url = bgTarget.soort === "straat" ? `/bord/${huidigBord}/background` : `/groups/${bgTarget.id}/background`;
   try {
     await api(url, { method: "POST", body: fd });
     toast("achtergrond aangepast");
@@ -770,7 +1161,7 @@ async function paintBackground(el, bgPreset, bgFileId) {
 
 async function loadArchief() {
   try {
-    const { days } = await api("/straat/archive");
+    const { days } = await api("/bord/lokaal/archive");
     const grid = $("arch-grid");
     grid.innerHTML = "";
     $("arch-empty").hidden = days.length > 0;
@@ -789,7 +1180,7 @@ async function loadArchief() {
 
       const c = card.querySelector("canvas").getContext("2d");
       clearCanvas(c, 400, 225);
-      api("/straat/" + d.date)
+      api("/bord/lokaal/dag/" + d.date)
         .then(async doc => renderItems(c, doc.items, 400, 225, await archiveBg(doc)))
         .catch(() => {});
     });
@@ -798,9 +1189,9 @@ async function loadArchief() {
 
 async function openArchiefDag(date) {
   try {
-    const doc = await api("/straat/" + date);
+    const doc = await api("/bord/lokaal/dag/" + date);
     $("ad-title").textContent = fmtDateLong(date);
-    $("ad-sub").textContent = doc.readonly ? "uit het archief — alleen kijken" : "dit is straat van vandaag";
+    $("ad-sub").textContent = doc.readonly ? "uit het archief — alleen kijken" : "dit is het lokaal van vandaag";
     $("ad-count").textContent = countLabel(doc.items);
     $("ad-contribs").textContent = doc.contributors.length ? doc.contributors.join(", ") : "niemand";
     const c = $("ad-canvas").getContext("2d");
@@ -830,6 +1221,7 @@ async function archiveBg(doc) {
  * ================================================================== */
 
 async function loadGroups() {
+  if (!magIk("groepen")) return;
   try {
     const data = await api("/groups");
     groups = data.groups;
@@ -981,7 +1373,7 @@ function appendGroupMessage(m, silent) {
 
   const av = document.createElement("div");
   av.className = "av";
-  if (isAi) { av.textContent = "✦"; av.style.background = "var(--purple)"; }
+  if (isAi) { zetBril(av); av.style.background = "var(--purple)"; }
   else { av.textContent = initials(m.displayName); av.style.background = avatarColor(m.displayName); }
 
   const bd = document.createElement("div");
@@ -1171,7 +1563,7 @@ async function showMaesNotice() {
 
   slot.innerHTML = `
     <div class="callout" style="margin-bottom:18px;">
-      <span class="cico" data-icon="maes">✦</span>
+      <span class="cico maes-bril" data-icon="maes">${MAES_BRIL}</span>
       <div class="cbody">${html}</div>
       <button class="cclose" onclick="closeMaesNotice()" title="sluiten">×</button>
     </div>`;
@@ -1205,7 +1597,7 @@ async function loadSlotMessages(id) {
   try {
     const { messages } = await api("/slots/" + id);
     if (!messages.length) {
-      box.innerHTML = `<div class="empty"><span class="big" data-icon="maes">✦</span>stel Maes-AI je eerste vraag</div>`;
+      box.innerHTML = `<div class="empty"><span class="big maes-bril" data-icon="maes">${MAES_BRIL}</span>stel Maes-AI je eerste vraag</div>`;
     }
     messages.forEach(m => appendMaes(m.role, m.content, true));
     applyIcons(box);
@@ -1233,7 +1625,7 @@ function appendMaes(role, text, silent) {
 
   const av = document.createElement("div");
   av.className = "av";
-  if (isAi) { av.textContent = "✦"; av.style.background = "var(--purple)"; }
+  if (isAi) { zetBril(av); av.style.background = "var(--purple)"; }
   else { av.textContent = initials(me.displayName); av.style.background = avatarColor(me.displayName); }
 
   const bd = document.createElement("div");
@@ -1313,7 +1705,7 @@ async function sendMaes() {
 
 /* ============================= CODE HEIST ========================== *
  *  Het nakijken gebeurt op de server, want een gehaalde dagelijkse
- *  heist levert echt krediet op. Hier tonen we alleen de uitslag.
+ *  doekoe van vandaag levert echt krediet op. Hier tonen we alleen de uitslag.
  * ================================================================== */
 
 let heistData = null;
@@ -1327,11 +1719,11 @@ async function openHeist() {
 
   const d = heistData.daily;
   $("heist-streak").innerHTML = `<span class="dot"></span>${heistData.streak} dag${heistData.streak === 1 ? "" : "en"} op rij`;
-  $("heist-verdiend").innerHTML = `<span class="dot"></span>${(heistData.verdiend * 100).toFixed(0)} cent verdiend`;
+  $("heist-verdiend").innerHTML = `<span class="dot"></span>${(heistData.verdiend * 100).toFixed(0)} cent doekoe verzameld`;
   $("heist-pill").hidden = d.gedaan;
   setCredit(heistData.pct, heistData.budget);
 
-  // --- de dagelijkse heist ---
+  // --- de doekoe van vandaag ---
   const soortLabel = { uitleg: "wat doe ik hier?", debug: "zoek de fout", schrijf: "schrijf me" };
   $("daily-type").textContent = (soortLabel[d.type] || "vandaag") + " · niveau " + (d.niveau || 1);
   $("daily-vraag").textContent = d.vraag;
@@ -1355,7 +1747,7 @@ async function openHeist() {
   } else {
     editor.hidden = false;
     editor.innerHTML = d.gedaan
-      ? `<p class="hd-uitleg">je hebt deze heist al gehaald.</p>`
+      ? `<p class="hd-uitleg">je hebt de doekoe van vandaag al binnen.</p>`
       : `<button class="btn primary" onclick="openWerk('daily')">openen en oplossen</button>`;
   }
 
@@ -1363,16 +1755,43 @@ async function openHeist() {
   waarom.hidden = !d.waarom;
   if (d.waarom) waarom.innerHTML = `<strong>waarom:</strong> ${esc(d.waarom)}`;
 
-  // --- levels ---
-  $("lvl-grid").innerHTML = heistData.levels.map((l, i) => `
-    <button class="lvl-card${l.klaar ? " klaar" : ""}" onclick="openWerk('level','${esc(l.id)}')">
-      <div class="lvl-n">${i + 1}</div>
-      <div class="lvl-b">
-        <strong>${esc(l.titel)}</strong>
-        <span>${esc(l.uitleg)}</span>
+  // --- levels, per hoofdstuk ---
+  /* Honderdzes kaartjes onder elkaar is geen lijst meer maar een muur.
+     Daarom per hoofdstuk uitklapbaar, en open staan de hoofdstukken
+     waar je nog niet klaar bent. De nummering loopt gewoon door. */
+  const hoofdstukken = [];
+  heistData.levels.forEach((l, i) => {
+    l.nr = i + 1;
+    const laatste = hoofdstukken[hoofdstukken.length - 1];
+    if (laatste && laatste.groep === l.groep) laatste.levels.push(l);
+    else hoofdstukken.push({ groep: l.groep, levels: [l] });
+  });
+
+  const eersteOpen = hoofdstukken.findIndex(g => g.levels.some(l => !l.klaar));
+
+  $("lvl-boek").innerHTML = hoofdstukken.map((g, gi) => {
+    const klaar = g.levels.filter(l => l.klaar).length;
+    const af = klaar === g.levels.length;
+    return `
+    <details class="lvl-hfd${af ? " af" : ""}"${gi === eersteOpen || eersteOpen === -1 ? " open" : ""}>
+      <summary>
+        <strong>${esc(g.groep)}</strong>
+        <span class="spacer"></span>
+        <span class="tag${af ? " green" : ""}">${klaar} van ${g.levels.length}</span>
+      </summary>
+      <div class="lvl-grid">
+        ${g.levels.map(l => `
+        <button class="lvl-card${l.klaar ? " klaar" : ""}" onclick="openWerk('level','${esc(l.id)}')">
+          <div class="lvl-n">${l.nr}</div>
+          <div class="lvl-b">
+            <strong>${esc(l.titel)}</strong>
+            <span>${esc(l.uitleg)}</span>
+          </div>
+          ${l.klaar ? '<span class="tag green">gekraakt</span>' : ""}
+        </button>`).join("")}
       </div>
-      ${l.klaar ? '<span class="tag green">gekraakt</span>' : ""}
-    </button>`).join("");
+    </details>`;
+  }).join("");
 
   sluitWerk();
 }
@@ -1395,30 +1814,43 @@ function openSpiek() {
   $("modal-spiek").classList.add("on");
 }
 
-function opdrachtVan(soort, id) {
-  return soort === "daily" ? heistData.daily : heistData.levels.find(l => l.id === id);
+/* De inhoud van een level (de les, de startcode, de eisen) komt pas
+   binnen als je hem opent — de lijst zelf houden we licht. Eenmaal
+   opgehaald bewaren we hem: levels veranderen niet tijdens je sessie. */
+const levelCache = {};
+
+async function haalLevel(id) {
+  if (!levelCache[id]) levelCache[id] = await api("/heist/level/" + id);
+  return levelCache[id];
 }
 
-function openWerk(soort, id) {
-  const o = opdrachtVan(soort, id);
+async function openWerk(soort, id) {
+  let o;
+  if (soort === "daily") {
+    o = heistData.daily;
+  } else {
+    try { o = await haalLevel(id); }
+    catch (e) { toast(e.message); return; }
+  }
   if (!o) return;
   werkOpdracht = { soort, id: id || o.id };
 
   $("heist-werk").hidden = false;
   $("werk-titel").textContent = o.titel || o.vraag;
   $("werk-uitleg").textContent = o.uitleg || "";
-  $("werk-tag").textContent = soort === "daily" ? "levert 1 cent op" : "level";
+  toonLes(o.les);
+  $("werk-tag").textContent = soort === "daily" ? "levert 1 cent doekoe op" : (o.element ? "uitleg" : "oefening");
   $("werk-tag").className = "tag" + (soort === "daily" ? " green" : "");
 
   $("werk-html").value = (o.start && o.start.html) || "";
   $("werk-css").value = (o.start && o.start.css) || "";
   toonEisen(o.eisen.map(t => ({ omschrijving: t, ok: null })));
   $("hint-box").hidden = true;
-  // hints horen bij de levels; de dagelijkse heist doe je zelf, die levert krediet op
+  // hints horen bij de levels; de doekoe van vandaag doe je zelf, die levert krediet op
   const isDaily = soort === "daily";
   $("hint-btn").hidden = isDaily;
   $("hint-op").textContent = isDaily
-    ? "de dagelijkse heist doe je zonder hulp"
+    ? "de doekoe van vandaag haal je zonder hulp"
     : heistData.hintsOver + " hints over vandaag";
   ververs();
   $("heist-werk").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1426,7 +1858,23 @@ function openWerk(soort, id) {
 
 function sluitWerk() {
   $("heist-werk").hidden = true;
+  toonLes(null);
   werkOpdracht = null;
+}
+
+// het lesje boven de opdracht: wat is dit element, hoe schrijf je het,
+// waar let je op, en wat gaat er meestal mis
+function toonLes(les) {
+  const box = $("werk-les");
+  if (!les) { box.hidden = true; box.innerHTML = ""; return; }
+  box.hidden = false;
+  box.innerHTML = `
+    <p class="les-wat">${esc(les.wat || "")}</p>
+    ${les.hoe ? `<pre class="les-code">${esc(les.hoe)}</pre>` : ""}
+    ${(les.punten || []).length
+      ? `<ul class="les-punten">${les.punten.map(pt => `<li>${esc(pt)}</li>`).join("")}</ul>`
+      : ""}
+    ${les.fout ? `<p class="les-fout"><strong>wat er meestal misgaat:</strong> ${esc(les.fout)}</p>` : ""}`;
 }
 
 function toonEisen(lijst) {
@@ -1458,7 +1906,7 @@ async function leverIn() {
     toonEisen(r.resultaten || []);
     if (r.geslaagd) {
       if (r.uitbetaald) {
-        toast(`gekraakt! +${Math.round(r.beloning * 100)} cent krediet erbij`);
+        toast(`binnen! +${Math.round(r.beloning * 100)} cent doekoe erbij`);
         setCredit(r.pct, r.budget);
       } else if (r.alGedaan) {
         toast(r.bericht);
@@ -1477,7 +1925,7 @@ async function antwoordDaily(keuze) {
   try {
     const r = await api("/heist/daily", { json: { keuze } });
     if (r.geslaagd) {
-      toast(r.uitbetaald ? `juist! +${Math.round(r.beloning * 100)} cent krediet erbij` : (r.bericht || "juist"));
+      toast(r.uitbetaald ? `juist! +${Math.round(r.beloning * 100)} cent doekoe erbij` : (r.bericht || "juist"));
       if (r.pct !== undefined) setCredit(r.pct, r.budget);
     } else {
       toast("dat is het niet, probeer opnieuw");
@@ -1508,6 +1956,231 @@ async function vraagHint() {
   btn.textContent = "vraag Maes-AI om een hint";
 }
 
+
+/* ================================================================== *
+ *  OVER ICW — het artikel als forumdraad, plus de quiz
+ *
+ *  Alle tekst komt van de server (backend/icw-content.js). Hier staat
+ *  alleen hoe het eruitziet en hoe de quiz zich gedraagt.
+ * ================================================================== */
+
+let icwData = null;
+let quizAntwoorden = [];    // index van de gekozen optie per vraag
+let quizVraag = 0;          // waar je nu staat
+
+async function openIcw() {
+  $("topbar-actions").innerHTML = "";
+  const draad = $("icw-draad");
+  if (!icwData) draad.innerHTML = `<div class="empty">bezig met laden...</div>`;
+
+  try {
+    icwData = await api("/icw");
+  } catch (e) { toast(e.message); return; }
+
+  $("icw-titel").textContent = icwData.artikel.titel;
+  $("icw-onderschrift").textContent = icwData.artikel.onderschrift;
+  draad.innerHTML = icwData.artikel.posts.map((p, i) => `
+    <article class="fp${p.speld ? " gespeld" : ""}" id="icw-${esc(p.id)}">
+      <header class="fp-kop">
+        <span class="fp-av" style="background:${avatarColor(p.auteur)}">${esc(initials(p.auteur))}</span>
+        <div class="fp-wie">
+          <strong>${esc(p.auteur)}</strong>
+          <span class="fp-rol">${esc(p.rol)}</span>
+        </div>
+        ${p.speld ? '<span class="tag blue">vastgezet</span>' : `<span class="fp-n">#${i + 1}</span>`}
+      </header>
+      <h2 class="fp-titel">${esc(p.titel)}</h2>
+      <div class="fp-body">${p.blokken.map(blokHtml).join("")}</div>
+    </article>`).join("");
+
+  // sprong naar de vraag waar je op klikte in het menu
+  $("icw-inhoud").innerHTML = icwData.artikel.posts.map(p =>
+    `<button class="icw-spring" onclick="springNaar('${esc(p.id)}')">${esc(p.titel)}</button>`).join("");
+
+  toonQuiz();
+}
+
+function blokHtml(b) {
+  if (b.soort === "kader") return `<div class="fp-kader">${esc(b.tekst)}</div>`;
+  if (b.soort === "lijst") {
+    return `${b.kop ? `<h3 class="fp-sub">${esc(b.kop)}</h3>` : ""}
+      <ul class="fp-lijst">${b.items.map(i => `<li>${esc(i)}</li>`).join("")}</ul>`;
+  }
+  return `<p>${esc(b.tekst)}</p>`;
+}
+
+function springNaar(id) {
+  const el = $("icw-" + id);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ------------------------------ de quiz ---------------------------- */
+/* Eén vraag tegelijk. Na je keuze zie je meteen het weetje bij die vraag,
+   pas daarna gaat hij door. Het optellen doet de server. */
+
+function toonQuiz() {
+  const q = icwData.quiz;
+  $("quiz-titel").textContent = q.titel;
+  $("quiz-intro").textContent = q.intro;
+
+  // al eens gedaan? dan tonen we die uitslag, met een knop om opnieuw te doen
+  if (icwData.uitslag && !quizAntwoorden.length) {
+    toonUitslag(icwData.uitslag, true);
+    return;
+  }
+  quizAntwoorden = [];
+  quizVraag = 0;
+  $("quiz-start").hidden = false;
+  $("quiz-spel").hidden = true;
+  $("quiz-uitslag").hidden = true;
+}
+
+function startQuiz() {
+  quizAntwoorden = [];
+  quizVraag = 0;
+  $("quiz-start").hidden = true;
+  $("quiz-uitslag").hidden = true;
+  $("quiz-spel").hidden = false;
+  tekenVraag();
+}
+
+function tekenVraag() {
+  const q = icwData.quiz.vragen[quizVraag];
+  const totaal = icwData.quiz.vragen.length;
+
+  $("quiz-voortgang").style.width = ((quizVraag / totaal) * 100) + "%";
+  $("quiz-teller").textContent = `vraag ${quizVraag + 1} van ${totaal}`;
+  $("quiz-vraag").textContent = q.vraag;
+  $("quiz-opties").innerHTML = q.opties.map((o, i) =>
+    `<button class="keuze" onclick="kiesQuiz(${i})">${esc(o)}</button>`).join("");
+  $("quiz-weetje").hidden = true;
+  $("quiz-verder").hidden = true;
+}
+
+function kiesQuiz(i) {
+  const q = icwData.quiz.vragen[quizVraag];
+  quizAntwoorden[quizVraag] = i;
+
+  // je keuze blijft staan, de rest gaat op slot
+  $("quiz-opties").querySelectorAll(".keuze").forEach((b, n) => {
+    b.disabled = true;
+    b.classList.toggle("gekozen", n === i);
+  });
+  if (q.weetje) {
+    $("quiz-weetje").hidden = false;
+    $("quiz-weetje").innerHTML = `<strong>wist je dat</strong> ${esc(q.weetje)}`;
+  }
+  const laatste = quizVraag === icwData.quiz.vragen.length - 1;
+  const verder = $("quiz-verder");
+  verder.hidden = false;
+  verder.textContent = laatste ? "toon mijn uitslag" : "volgende vraag";
+}
+
+async function volgendeVraag() {
+  if (quizVraag < icwData.quiz.vragen.length - 1) {
+    quizVraag++;
+    tekenVraag();
+    return;
+  }
+  // klaar: de server telt op
+  const knop = $("quiz-verder");
+  knop.disabled = true;
+  try {
+    const r = await api("/icw/quiz", { json: { antwoorden: quizAntwoorden } });
+    icwData.uitslag = r;
+    toonUitslag(r, false);
+  } catch (e) { toast(e.message); }
+  knop.disabled = false;
+}
+
+function toonUitslag(u, opnieuw) {
+  $("quiz-start").hidden = true;
+  $("quiz-spel").hidden = true;
+  $("quiz-uitslag").hidden = false;
+  $("quiz-voortgang").style.width = "100%";
+
+  const pct = u.maxScore ? Math.round((u.score / u.maxScore) * 100) : 0;
+  $("quiz-score").textContent = `${u.score} van ${u.maxScore}`;
+  $("quiz-meter").style.width = pct + "%";
+  $("quiz-meter").style.background =
+    pct >= 80 ? "var(--green)" : pct >= 55 ? "var(--aqua)" : pct >= 30 ? "var(--yellow)" : "var(--red)";
+  $("quiz-uitslag-titel").textContent = u.titel;
+  $("quiz-uitslag-tekst").textContent = u.tekst;
+  $("quiz-eerder").hidden = !opnieuw;
+}
+
+/* ================================================================== *
+ *  WAT IS MAES-AI — de pagina voor gasten
+ *  Uitleg over hoe de klas OpenAI aan deze site geknoopt heeft, plus
+ *  één vraag die je zelf mag stellen.
+ * ================================================================== */
+
+let maesOver = null;        // hoeveel voorbeeldvragen een gast nog heeft
+let maesUitlegBezig = false;
+
+async function openMaesUitleg() {
+  $("topbar-actions").innerHTML = "";
+  let d;
+  try { d = await api("/maes/uitleg"); } catch (e) { toast(e.message); return; }
+
+  maesOver = d.over;
+  $("mu-model").textContent = d.model;
+  $("mu-stappen").innerHTML = d.stappen.map((s, i) => `
+    <div class="mu-stap">
+      <span class="mu-n">${i + 1}</span>
+      <div>
+        <strong>${esc(s.kop)}</strong>
+        <p>${esc(s.tekst)}</p>
+      </div>
+    </div>`).join("");
+  $("mu-randjes").innerHTML = d.randjes.map(r => `<li>${esc(r)}</li>`).join("");
+
+  zetProefStand();
+}
+
+function zetProefStand() {
+  const op = maesOver !== null && maesOver <= 0;
+  $("mu-over").textContent = maesOver === null
+    ? "je hebt onbeperkt toegang tot Maes-AI"
+    : maesOver <= 0 ? "je voorbeeldvraag is gebruikt"
+    : maesOver === 1 ? "je hebt nog één vraag"
+    : `je hebt nog ${maesOver} vragen`;
+  $("mu-input").disabled = op;
+  $("mu-stuur").disabled = op;
+  $("mu-input").placeholder = op
+    ? "je voorbeeldvraag is opgebruikt"
+    : "stel Maes-AI je vraag...";
+  $("mu-op").hidden = !op;
+}
+
+async function stuurMaesProef() {
+  if (maesUitlegBezig) return;
+  const vraag = $("mu-input").value.trim();
+  if (!vraag) return;
+  if (maesOver !== null && maesOver <= 0) { toast("je voorbeeldvraag is op"); return; }
+
+  maesUitlegBezig = true;
+  $("mu-stuur").disabled = true;
+  $("mu-gesprek").hidden = false;
+  $("mu-jij").textContent = vraag;
+  $("mu-antwoord").innerHTML = 'Maes-AI denkt na <span class="dots"><i></i><i></i><i></i></span>';
+  $("mu-input").value = "";
+
+  const fd = new FormData();
+  fd.append("message", vraag);
+  fd.append("slotId", "1");
+  fd.append("mode", "regular");
+
+  try {
+    const d = await api("/chat", { method: "POST", body: fd });
+    $("mu-antwoord").textContent = d.reply;
+    if (d.maesOver !== undefined) { maesOver = d.maesOver; setCredit(); }
+  } catch (e) {
+    $("mu-antwoord").textContent = "er ging iets mis: " + e.message;
+  }
+  maesUitlegBezig = false;
+  zetProefStand();
+}
 /* ---------------------------- instellingen ------------------------ */
 
 async function openSettings() {
@@ -1541,14 +2214,21 @@ async function loadAdmin() {
   $("topbar-actions").innerHTML = "";
   try {
     const { users, maxEuro } = await api("/admin/users");
+    const soortTag = u => {
+      if (u.isAdmin) return '<span class="tag purple">beheer</span>';
+      if (u.role === "gast") return `<span class="tag">gast${u.claimed ? "" : " · vrij"}</span>`;
+      if (u.role === "icw") return `<span class="tag blue">ICW${u.claimed ? "" : " · vrij"}</span>`;
+      return '<span class="tag">student</span>';
+    };
     $("admin-rows").innerHTML = users.map(u => `
       <tr>
         <td><input class="cell mono" value="${esc(u.username)}" ${u.isAdmin ? "disabled title=\"het hoofdbeheerdersaccount kan niet hernoemd worden\"" : ""}
-             onchange="saveUsername('${esc(u.username)}', this)" />${u.isAdmin ? '<span class="tag purple">beheer</span>' : ""}</td>
+             onchange="saveUsername('${esc(u.username)}', this)" /></td>
         <td><input class="cell" value="${esc(u.displayName)}"
              onchange="saveUser('${esc(u.username)}', this.value, null)" /></td>
         <td><input class="cell" value="${esc(u.password)}"
              onchange="saveUser('${esc(u.username)}', null, this.value)" /></td>
+        <td>${soortTag(u)}</td>
         <td>
           <span class="mini-track"><span class="mini-bar" style="width:${Math.min(u.pct, 100)}%;
             background:${u.pct < 55 ? "var(--green)" : u.pct < 85 ? "var(--yellow)" : "var(--red)"}"></span></span>
@@ -1567,8 +2247,137 @@ async function loadAdmin() {
         `</tbody></table>`
       : `<div class="empty"><span class="big" data-icon="groepen">👥</span>er zijn nog geen groepen</div>`;
     applyIcons($("v-beheer"));
+    await loadSpots();
+    await loadAanvragen();
     await loadLoginScreen();
     await loadStorage();
+  } catch (e) { toast(e.message); }
+}
+
+/* ------------------ gastplekken en junior ICW (beheer) ------------- *
+ *  Een plek is gewoon een account met een rol. Maak je er eentje bij,
+ *  dan krijgt hij meteen een wachtwoord dat je kan doorgeven. Geef je
+ *  een plek vrij, dan gaat wie erop zat eruit en komt er een nieuw
+ *  wachtwoord — een oud gastwachtwoord blijft dus niet rondslingeren.
+ * ------------------------------------------------------------------ */
+
+let spotsData = { gastOpen: false, gast: [], icw: [] };
+
+async function loadSpots() {
+  try {
+    spotsData = await api("/admin/spots");
+  } catch (e) { return; }
+
+  const knop = $("gast-open-btn");
+  knop.textContent = spotsData.gastOpen ? "uitzetten" : "aanzetten";
+  knop.classList.toggle("primary", !spotsData.gastOpen);
+  $("gast-open-uitleg").textContent = spotsData.gastOpen
+    ? "staat aan: wie de site vindt kan een vrije gastplek nemen zonder jou iets te vragen."
+    : "staat uit: gasten kunnen alleen binnen met een gebruikersnaam en wachtwoord die jij doorgeeft.";
+
+  const vrij = lijst => lijst.filter(p => !p.claimed).length;
+  $("gast-tel").textContent = `${vrij(spotsData.gast)} van ${spotsData.gast.length} vrij`;
+  $("icw-tel").textContent = `${vrij(spotsData.icw)} van ${spotsData.icw.length} vrij`;
+  $("gast-lijst").innerHTML = plekRijen(spotsData.gast, "er zijn nog geen gastplekken");
+  $("icw-lijst").innerHTML = plekRijen(spotsData.icw, "er zijn nog geen ICW-plekken");
+}
+
+function plekRijen(lijst, leeg) {
+  if (!lijst.length) return `<div class="plek-leeg">${esc(leeg)}</div>`;
+  return lijst.map(p => `
+    <div class="plek-rij">
+      <span class="pr-user">${esc(p.username)}</span>
+      <span class="pr-naam">${esc(p.displayName)}</span>
+      <span class="pr-pw">${esc(p.password)}</span>
+      <span class="tag ${p.claimed ? "green" : ""}">${p.claimed ? "bezet" : "vrij"}</span>
+      <span class="spacer"></span>
+      <button class="btn ghost sm" onclick="geefPlekVrij('${esc(p.username)}')">vrijgeven</button>
+    </div>`).join("");
+}
+
+async function toggleGastOpen() {
+  try {
+    const r = await api("/admin/spots/gast-open", { json: { open: !spotsData.gastOpen } });
+    toast(r.gastOpen ? "gasten mogen zelf binnen" : "gastplekken staan dicht");
+    await loadSpots();
+  } catch (e) { toast(e.message); }
+}
+
+async function maakPlek(rol) {
+  try {
+    const r = await api("/admin/spots", { json: { role: rol } });
+    toast(`${r.spot.username} aangemaakt — wachtwoord ${r.spot.password}`);
+    await loadSpots();
+    await loadAdmin();
+  } catch (e) { toast(e.message); }
+}
+
+async function geefPlekVrij(username) {
+  if (!confirm(`${username} vrijgeven? wie er nu op zit wordt uitgelogd en het wachtwoord verandert.`)) return;
+  try {
+    const r = await api(`/admin/spots/${encodeURIComponent(username)}/free`, { method: "POST" });
+    toast(`${r.username} is vrij — nieuw wachtwoord ${r.password}`);
+    await loadSpots();
+  } catch (e) { toast(e.message); }
+}
+
+/* ------------------- aanvragen van junior ICW ---------------------- */
+
+async function loadAanvragen() {
+  let d;
+  try { d = await api("/admin/junior-requests"); } catch (e) { return; }
+
+  const tel = $("aanvraag-tel");
+  tel.hidden = !d.open;
+  tel.textContent = `${d.open} open`;
+
+  const status = {
+    open: "wacht op jou", goedgekeurd: "goedgekeurd", geweigerd: "geweigerd",
+    ingetrokken: "goedgekeurd, maar de plek bestaat niet meer",
+  };
+  $("aanvragen").innerHTML = d.requests.length
+    ? d.requests.map(r => `
+        <div class="aanvraag ${esc(r.status)}">
+          <div class="av-b">
+            <strong>${esc(r.smartschool)}</strong>
+            ${r.bericht ? `<span class="av-m">${esc(r.bericht)}</span>` : ""}
+            <span class="av-t">${esc(status[r.status] || r.status)} · aangevraagd ${fmtDateLong(new Date(r.createdAt).toLocaleDateString("sv-SE"))}
+              ${r.status === "goedgekeurd" ? ` · <code>${esc(r.username)}</code> / <code>${esc(r.password)}</code>` : ""}
+              ${r.status === "geweigerd" && r.reden ? ` · reden: ${esc(r.reden)}` : ""}</span>
+          </div>
+          <div class="av-knoppen">
+            ${r.status === "open" ? `
+              <button class="btn primary sm" onclick="keurAanvraagGoed('${esc(r.id)}')">goedkeuren</button>
+              <button class="btn sm" onclick="weigerAanvraag('${esc(r.id)}')">weigeren</button>` : ""}
+            <button class="btn ghost sm" onclick="wisAanvraag('${esc(r.id)}')">wissen</button>
+          </div>
+        </div>`).join("")
+    : `<div class="plek-leeg" style="margin-top:9px;">er zijn nog geen aanvragen</div>`;
+}
+
+async function keurAanvraagGoed(id) {
+  try {
+    const r = await api(`/admin/junior-requests/${id}/approve`, { method: "POST" });
+    toast(`goedgekeurd — ${r.username} / ${r.password}`);
+    await loadAanvragen();
+    await loadSpots();
+  } catch (e) { toast(e.message); }
+}
+
+async function weigerAanvraag(id) {
+  const reden = prompt("waarom niet? (mag leeg, de aanvrager ziet dit)") ;
+  if (reden === null) return;
+  try {
+    await api(`/admin/junior-requests/${id}/deny`, { json: { reden } });
+    await loadAanvragen();
+  } catch (e) { toast(e.message); }
+}
+
+async function wisAanvraag(id) {
+  if (!confirm("deze aanvraag wissen?")) return;
+  try {
+    await api(`/admin/junior-requests/${id}`, { method: "DELETE" });
+    await loadAanvragen();
   } catch (e) { toast(e.message); }
 }
 
@@ -1596,10 +2405,12 @@ async function loadStorage() {
 
 /* --------------- inlogscherm dat de beheerder regelt --------------- */
 
-let loginScreen = { title: "", text: "", image: null };
+let loginScreen = { title: "", text: "", image: null, bg: "leeg", heeftAfbeelding: false };
 
 async function loadLoginScreen() {
   try {
+    // dit is dezelfde call als het inlogscherm zelf doet, dus je ziet in het
+    // voorbeeld precies wat een bezoeker ziet
     loginScreen = await api("/public/login-screen");
     $("ls-title").value = loginScreen.title || "";
     $("ls-text").value = loginScreen.text || "";
@@ -1608,17 +2419,50 @@ async function loadLoginScreen() {
 }
 
 function renderLoginPreview() {
+  const bg = loginScreen.bg || "leeg";
+
+  document.querySelectorAll(".ls-bg-keuze").forEach(b =>
+    b.classList.toggle("on", b.dataset.bg === bg));
+
   const img = $("ls-preview-img");
-  if (loginScreen.image) {
+  if (bg === "afbeelding" && loginScreen.image) {
     img.hidden = false;
     img.style.backgroundImage = `url("${loginScreen.image}")`;
   } else {
     img.hidden = true;
     img.style.backgroundImage = "";
   }
+
+  // de tekening van vandaag, net zoals op het inlogscherm
+  const cv = $("ls-preview-canvas");
+  if (bg === "tekening" && loginScreen.tekening) {
+    cv.hidden = false;
+    const c = cv.getContext("2d");
+    renderItems(c, loginScreen.tekening.items || [], cv.width, cv.height,
+      canvasBg({ bgPreset: loginScreen.tekening.bgPreset, bgFileId: null }, null));
+  } else {
+    cv.hidden = true;
+  }
+
   $("ls-preview-title").textContent = loginScreen.title || "";
   $("ls-preview-text").textContent = loginScreen.text || "";
-  $("ls-preview").classList.toggle("leeg", !loginScreen.image && !loginScreen.title && !loginScreen.text);
+  $("ls-preview").classList.toggle("leeg",
+    bg === "leeg" && !loginScreen.title && !loginScreen.text);
+}
+
+// de keuze voor de lege ruimte links slaat meteen op — geen extra knop
+async function setLoginBg(bg) {
+  if (bg === "afbeelding" && !loginScreen.heeftAfbeelding) {
+    toast("kies eerst een afbeelding");
+    return;
+  }
+  try {
+    await api("/admin/login-screen", { json: { bg } });
+    await loadLoginScreen();
+    toast(bg === "tekening" ? "het lokaal staat nu op het inlogscherm"
+      : bg === "afbeelding" ? "de afbeelding staat nu op het inlogscherm"
+      : "de linkerkant blijft leeg");
+  } catch (e) { toast(e.message); }
 }
 
 async function saveLoginScreen() {
@@ -1628,6 +2472,7 @@ async function saveLoginScreen() {
     });
     loginScreen.title = out.title;
     loginScreen.text = out.text;
+    loginScreen.bg = out.bg;
     renderLoginPreview();
     toast("inlogscherm opgeslagen");
   } catch (e) { toast(e.message); }
@@ -1636,9 +2481,8 @@ async function saveLoginScreen() {
 async function clearLoginImage() {
   try {
     await api("/admin/login-screen", { json: { clearImage: true } });
-    loginScreen.image = null;
     $("ls-image").value = "";
-    renderLoginPreview();
+    await loadLoginScreen();
     toast("afbeelding verwijderd");
   } catch (e) { toast(e.message); }
 }
@@ -1650,10 +2494,9 @@ $("ls-image").addEventListener("change", async e => {
   const fd = new FormData();
   fd.append("image", f);
   try {
-    const out = await api("/admin/login-screen/image", { method: "POST", body: fd });
-    loginScreen.image = out.image;
-    renderLoginPreview();
-    toast("afbeelding opgeslagen");
+    await api("/admin/login-screen/image", { method: "POST", body: fd });
+    await loadLoginScreen();
+    toast("afbeelding opgeslagen en op het inlogscherm gezet");
   } catch (err) { toast(err.message); }
 });
 
@@ -1700,3 +2543,104 @@ async function resetAllSpend() {
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 boot();
+
+/* ----------------------------- downloads --------------------------- */
+/* MaasAI staat achter de login. Het bestand komt uit GridFS in dezelfde
+   database als de rest; zie /downloads in de backend. */
+
+function leesbaar(bytes) {
+  if (!bytes) return "onbekend";
+  return bytes >= 1048576
+    ? (bytes / 1048576).toFixed(0) + " MB"
+    : (bytes / 1024).toFixed(0) + " kB";
+}
+
+async function openDownloads() {
+  const meta = $("dl-maasai-meta");
+  const knop = $("dl-maasai-knop");
+  const uitleg = $("dl-maasai-uitleg");
+  $("dl-beheer").hidden = !me.isAdmin;
+  knop.hidden = true;
+  uitleg.hidden = true;
+  meta.textContent = "laden…";
+
+  try {
+    const data = await api("/downloads");
+    const d = (data.downloads || []).find(x => x.sleutel === "maasai");
+    if (!d) {
+      meta.textContent = me.isAdmin
+        ? "er staat nog niets klaar — zet hieronder een build neer"
+        : "er staat nog niets klaar";
+      return;
+    }
+    $("dl-maasai-titel").textContent = d.titel || "MaasAI voor Windows";
+    const stukken = [leesbaar(d.grootte)];
+    if (d.versie) stukken.push("versie " + d.versie);
+    if (d.uploadedAt) stukken.push(new Date(d.uploadedAt).toLocaleDateString("nl-BE"));
+    if (d.keer) stukken.push(d.keer + (d.keer === 1 ? " keer" : " keer") + " gedownload");
+    meta.textContent = stukken.join(" · ");
+    knop.hidden = false;
+    uitleg.hidden = false;
+  } catch (err) {
+    meta.textContent = err.message;
+  }
+}
+
+/* De token gaat hier in de URL en niet in een header: dit is een gewone
+   navigatie van de browser, zodat je zijn eigen downloadvenster krijgt en we
+   geen 76 MB door het geheugen van de pagina hoeven te trekken. */
+function haalDownload(sleutel) {
+  location.href = BACKEND + "/downloads/" + encodeURIComponent(sleutel)
+    + "/bestand?t=" + encodeURIComponent(token);
+}
+
+// alleen de beheerder komt hier; XHR in plaats van fetch, want bij een bestand
+// van tientallen megabytes wil je een voortgangsbalk zien
+function zetDownloadNeer(input) {
+  const f = input.files && input.files[0];
+  input.value = "";
+  if (!f) return;
+
+  const status = $("dl-status");
+  const wrap = $("dl-balk-wrap");
+  const balk = $("dl-balk");
+  wrap.hidden = false;
+  balk.style.width = "0%";
+  status.textContent = "bezig met versturen…";
+
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("titel", "MaasAI voor Windows");
+  fd.append("bestandsnaam", f.name || "MaasAI.exe");
+
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", BACKEND + "/downloads/maasai");
+  xhr.setRequestHeader("x-auth-token", token);
+
+  xhr.upload.onprogress = e => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round((e.loaded / e.total) * 100);
+    balk.style.width = pct + "%";
+    status.textContent = pct + "% van " + leesbaar(f.size);
+  };
+
+  xhr.onload = () => {
+    wrap.hidden = true;
+    let data = {};
+    try { data = JSON.parse(xhr.responseText || "{}"); } catch (e) { /* geen json */ }
+    if (xhr.status >= 200 && xhr.status < 300) {
+      status.textContent = "";
+      toast("MaasAI staat klaar");
+      openDownloads();
+    } else {
+      status.textContent = data.error || "versturen mislukt";
+    }
+  };
+
+  xhr.onerror = () => {
+    wrap.hidden = true;
+    status.textContent = "versturen mislukt — verbinding verbroken";
+  };
+
+  xhr.send(fd);
+}

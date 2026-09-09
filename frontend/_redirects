@@ -1,0 +1,6 @@
+# Cloudflare Pages. Zie CLOUDFLARE.md.
+# De app is geen SPA met padroutes: alle schermen zitten achter een #-hash
+# in app.html, dus er valt niets te herschrijven. Deze twee zijn er alleen
+# omdat de oude losse pagina's nog in bookmarks kunnen staan.
+/dev      /app.html    301
+/manage   /app.html    301

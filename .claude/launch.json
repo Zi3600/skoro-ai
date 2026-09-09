@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "drerries-ai",
+      "name": "lokaal-b16",
       "runtimeExecutable": "node",
       "runtimeArgs": ["dev-local.js"],
       "cwd": "backend",

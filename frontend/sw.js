@@ -1,4 +1,4 @@
-const CACHE = "drerries-v3";
+const CACHE = "lokaal-b16-v5";
 
 self.addEventListener("install", e => {
   e.waitUntil(
@@ -8,6 +8,7 @@ self.addEventListener("install", e => {
       "/app.html",
       "/app.css",
       "/app.js",
+      "/config.js",
       "/manifest.json",
       "/icon-192.png",
       "/icon-512.png",
@@ -26,7 +27,13 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   if (e.request.url.includes("/socket.io/")) return;
-  if (e.request.url.includes("onrender.com/")) return;
+
+  /* Alles wat niet van deze site zelf komt, laten we met rust. Dat is precies
+     wat we nodig hebben als de pagina's op Cloudflare Pages staan en de API
+     ergens anders: die API-verzoeken mogen nooit uit de cache komen. */
+  let zelfde = false;
+  try { zelfde = new URL(e.request.url).origin === location.origin; } catch (err) { /* rare URL, overslaan */ }
+  if (!zelfde) return;
 
   e.respondWith(
     fetch(e.request).catch(() => caches.match(e.request))

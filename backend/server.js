@@ -9,6 +9,7 @@ const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 const path = require("path");
 const crypto = require("crypto");
+const { ARTIKEL, QUIZ } = require("./icw-content");
 const { LEVELS } = require("./heist-content");
 const { DAILY, SPIEK } = require("./heist-daily");
 const { controleer } = require("./heist-check");
@@ -16,16 +17,61 @@ const { controleer } = require("./heist-check");
 dotenv.config();
 
 /* ------------------------------------------------------------------ *
- *  drerries-ai  —  backend
- *  de straat (dagelijkse tekening + typen) · groepen · Maes-AI
+ *  lokaal b16  —  backend
+ *  het lokaal (dagelijkse tekening + typen) · groepen · Maes-AI
+ *
+ *  NAAMGEVING: de app heette vroeger drerries-ai en "het lokaal" heette
+ *  toen "de straat". In de teksten die iemand te zien krijgt staat overal
+ *  het nieuwe woord. In de CODE heet de collectie nog "straats": die
+ *  hernoemen zou alle bestaande tekeningen weggooien en niets opleveren.
+ *  Straat (collectie) = lokaal (scherm). De socket-events heten sinds het
+ *  gastbord wél bord:* — die staan nergens opgeslagen, dus daar kost een
+ *  eerlijke naam niets.
  * ------------------------------------------------------------------ */
 
 const MAX_EURO = 0.25;        // harde limiet per student
 const TRIAL_EURO = 0.15;      // "gratis krediet" op de Maes-AI pagina
 const STUDENT_COUNT = 20;
 
+// Wie in het lokaal tekent of typt mag één ding tegelijk plaatsen en moet
+// daarna 30 seconden wachten. Dit staat hier op de server, niet alleen in de
+// browser: anders omzeilt iemand het met de console. De beheerder valt er
+// buiten, die moet kunnen ingrijpen zonder te wachten.
+const LOKAAL_COOLDOWN_MS = 30000;
+
+// de soorten accounts; "beheer" zit apart in isAdmin
+const ROLLEN = ["student", "gast", "icw"];
+
+/* Wat elke soort account mag. Dit staat hier op één plek en gaat mee naar
+   de browser (via /me), zodat het scherm en de server nooit iets anders
+   denken. De browser gebruikt het om knoppen te verbergen; de server
+   controleert het opnieuw bij elke actie, want een verborgen knop is geen
+   slot. Een beheerder mag alles, die staat niet in deze tabel. */
+const RECHTEN = {
+  student: { lokaalSchrijven: true,  gastbord: false, groepen: true,  doekoe: true,  maes: "vol" },
+  icw:     { lokaalSchrijven: true,  gastbord: false, groepen: true,  doekoe: true,  maes: "vol" },
+  // een gast kijkt mee in het lokaal maar schrijft er niet in; hij heeft een
+  // eigen bord met eigen chat, en van Maes-AI krijgt hij één berichtje
+  gast:    { lokaalSchrijven: false, gastbord: true,  groepen: false, doekoe: false, maes: "proef" },
+};
+
+const RECHTEN_BEHEER = { lokaalSchrijven: true, gastbord: true, groepen: true, doekoe: true, maes: "vol" };
+
+function rechtenVan(username) {
+  if (ADMINS.has(username)) return RECHTEN_BEHEER;
+  return RECHTEN[ROLES[username]] || RECHTEN.student;
+}
+
+// een gast mag Maes-AI één keer proberen, meer niet
+const GAST_MAES_LIMIET = 1;
+
 const IMAGE_MAX = 5 * 1024 * 1024;    // 5 MB
 const FILE_MAX = 20 * 1024 * 1024;    // 20 MB
+
+// Een programma dat te downloaden staat is een andere orde van grootte dan een
+// bijlage in een groep: MaasAI.exe is ongeveer 76 MB. Vandaar een eigen limiet,
+// en alleen de beheerder mag zoiets neerzetten.
+const DOWNLOAD_MAX = 200 * 1024 * 1024;  // 200 MB
 
 // Alles wat geüpload wordt gaat in MongoDB (GridFS), niet op de schijf van de
 // server. De schijf van Render wordt bij elke deploy gewist — Mongo niet.
@@ -49,6 +95,11 @@ const UserAuthSchema = new mongoose.Schema({
   password: String,
   displayName: String,
   isAdmin: { type: Boolean, default: false },
+  // student = de vaste 20 · gast = tijdelijke bezoeker · icw = junior ICW-student
+  role: { type: String, default: "student" },
+  // alleen voor gast- en icw-plekken: is de plek al aan iemand gegeven?
+  claimed: { type: Boolean, default: false },
+  claimedAt: { type: Number, default: null },
 });
 
 const UserDataSchema = new mongoose.Schema({
@@ -58,6 +109,8 @@ const UserDataSchema = new mongoose.Schema({
   heist: { type: Object, default: () => ({ levels: [], daily: {}, streak: 0 }) },
   chats: { type: Array, default: [] },
   pfp: { type: String, default: null },
+  maesGebruikt: { type: Number, default: 0 },   // tikt alleen voor gasten
+  icw: { type: Object, default: () => ({}) },   // uitslag van de ICW-quiz
 });
 
 const SessionSchema = new mongoose.Schema({
@@ -66,7 +119,7 @@ const SessionSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-// één document per dag — de straat
+// één document per dag — het lokaal (de collectie heet nog straats, zie bovenaan)
 const StraatSchema = new mongoose.Schema({
   date: { type: String, unique: true },   // YYYY-MM-DD (Europe/Brussels)
   items: { type: Array, default: [] },    // strokes + teksten, in tekenvolgorde
@@ -131,7 +184,28 @@ const Straat = mongoose.model("Straat", StraatSchema);
 const Group = mongoose.model("Group", GroupSchema);
 const GroupMessage = mongoose.model("GroupMessage", GroupMessageSchema);
 const FileDoc = mongoose.model("FileDoc", FileSchema);
-// publieke chat op de straat — iedereen zit hier samen in
+
+/* Een programma dat de klas kan downloaden. Eén document per sleutel, dus
+   "maasai" is altijd de nieuwste versie: een nieuwe upload vervangt de oude en
+   gooit het oude bestand uit GridFS. Zo groeit de opslag niet bij elke nieuwe
+   build, en op een gratis Atlas van 512 MB is dat het verschil tussen werken
+   en vollopen. Het bestand zelf staat in GridFS, net als de bijlagen. */
+const DownloadSchema = new mongoose.Schema({
+  sleutel: { type: String, unique: true },   // "maasai"
+  titel: String,
+  omschrijving: { type: String, default: "" },
+  bestandsnaam: String,
+  versie: { type: String, default: "" },
+  mime: { type: String, default: "application/octet-stream" },
+  grootte: { type: Number, default: 0 },
+  stored: String,                            // het id in GridFS
+  uploader: String,
+  uploadedAt: { type: Number, default: () => Date.now() },
+  keer: { type: Number, default: 0 },        // hoe vaak gedownload
+});
+
+const Download = mongoose.model("Download", DownloadSchema);
+// publieke chat van het lokaal — iedereen zit hier samen in
 const StraatChatSchema = new mongoose.Schema({
   id: String,
   username: String,
@@ -146,17 +220,86 @@ const SettingsSchema = new mongoose.Schema({
   loginTitle: { type: String, default: "" },
   loginText: { type: String, default: "" },
   loginImage: { type: String, default: null },
+  // wat er in de lege ruimte links op het inlogscherm staat:
+  // "leeg" · "tekening" (het lokaal van vandaag) · "afbeelding" (loginImage)
+  loginBg: { type: String, default: "leeg" },
+  // staan de gastplekken open voor wie de site vindt?
+  gastOpen: { type: Boolean, default: false },
   migrationLog: { type: Array, default: [] },
   straatBgPreset: { type: String, default: "" },
   straatBgFileId: { type: String, default: null },
   updatedAt: { type: Number, default: () => Date.now() },
 });
 
+/* Een junior ICW-student vraagt een plek aan met zijn Smartschool-naam. De
+   beheerder keurt goed of af in beheer; de aanvrager volgt het op de site
+   met diezelfde naam en krijgt daar zijn inloggegevens. Er gaat dus geen
+   mail of Smartschool-bericht heen en weer. */
+const JuniorRequestSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  smartschool: String,
+  smartschoolKey: String,          // kleine letters, om dubbele aanvragen te vinden
+  bericht: { type: String, default: "" },
+  status: { type: String, default: "open" },   // open | goedgekeurd | geweigerd
+  username: { type: String, default: null },   // toegekende plek
+  password: { type: String, default: null },
+  reden: { type: String, default: "" },        // bij een weigering
+  createdAt: { type: Number, default: () => Date.now() },
+  handledAt: { type: Number, default: null },
+  handledBy: { type: String, default: null },
+});
+
 const Persona = mongoose.model("Persona", PersonaSchema);
 const StraatChat = mongoose.model("StraatChat", StraatChatSchema);
 const Settings = mongoose.model("Settings", SettingsSchema);
+const JuniorRequest = mongoose.model("JuniorRequest", JuniorRequestSchema);
+
+/* Het gastbord: precies dezelfde vorm als het lokaal, maar een eigen
+   collectie. Gasten tekenen daar wél, in het lokaal niet.
+
+   Waarom een aparte collectie en geen veld "bord" op Straat: op `date` staat
+   een unique index, en die zou dan naar (date, bord) moeten. Een bestaande
+   unique index omzetten op de draaiende database is precies het soort werk
+   waar tekeningen bij sneuvelen. Twee collecties kost hier niets: alle
+   logica hieronder werkt op allebei via de tabel BORDEN. */
+const GastBord = mongoose.model("GastBord", StraatSchema);
+const GastChat = mongoose.model("GastChat", StraatChatSchema);
 
 const STRAAT_CHAT_KEEP = 200;
+
+/* De twee borden. Alles wat een bord kan (tekenen, typen, chatten, archief,
+   achtergrond, moderatie) is hieronder één keer geschreven en kijkt hier op
+   welke collectie het moet zijn. */
+const BORDEN = {
+  lokaal: {
+    id: "lokaal",
+    naam: "het lokaal",
+    model: Straat,
+    chat: StraatChat,
+    room: "bord:lokaal",
+    bgGroup: "__straat__",      // bestaande achtergronden hangen hieraan, niet hernoemen
+  },
+  gast: {
+    id: "gast",
+    naam: "het gastbord",
+    model: GastBord,
+    chat: GastChat,
+    room: "bord:gast",
+    bgGroup: "__gastbord__",
+  },
+};
+
+function bordVan(id) {
+  return BORDEN[String(id || "")] || null;
+}
+
+// mag deze gebruiker dit bord zien? en mag hij erop schrijven?
+function bordRechten(username, bordId) {
+  const r = rechtenVan(username);
+  if (bordId === "lokaal") return { lezen: true, schrijven: !!r.lokaalSchrijven };
+  if (bordId === "gast") return { lezen: !!r.gastbord, schrijven: !!r.gastbord };
+  return { lezen: false, schrijven: false };
+}
 
 /* ------------------------------ app ------------------------------- */
 
@@ -176,14 +319,36 @@ const groupUpload = multer({
   limits: { fileSize: FILE_MAX },
 });
 
+/* Achter Cloudflare (of Render, of allebei) komt het verkeer via een proxy
+   binnen. Zonder dit ziet Express elk verzoek als http van 127.0.0.1 en
+   klopt req.ip niet meer — wat vooral vervelend is als we ooit iets per IP
+   willen begrenzen. Cloudflare zet het echte adres in CF-Connecting-IP en
+   vult X-Forwarded-For netjes aan. */
+app.set("trust proxy", true);
+
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+
+/* De frontend mag ook los gehost worden (bv. Cloudflare Pages) terwijl deze
+   server alleen de API doet. Dan wordt deze regel gewoon nooit geraakt:
+   niemand vraagt de bestanden hier op. Zie CLOUDFLARE.md. */
 app.use(express.static(path.join(__dirname, "../frontend")));
+
+/* Kort en zonder database: hiermee kan een proxy of uptime-check zien of de
+   server leeft, zonder een sessie of Mongo aan te spreken. */
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+    mongo: mongoose.connection.readyState === 1 ? "verbonden" : "niet verbonden",
+    uptime: Math.round(process.uptime()),
+  });
+});
 
 /* ---------------------------- helpers ----------------------------- */
 
 const USERS = {};   // username -> password
 const NAMES = {};   // username -> displayName
+const ROLES = {};   // username -> "student" | "gast" | "icw"
 const ADMINS = new Set();
 const tokens = {};  // token -> username (ook in Mongo, zodat een herstart niemand uitlogt)
 
@@ -229,12 +394,14 @@ async function bootstrap() {
       { username: { $ne: "dev" }, isAdmin: { $exists: false } },
       { $set: { isAdmin: false } }
     );
+    // accounts van voor de gast- en ICW-plekken zijn gewoon studenten
+    await UserAuth.updateMany({ role: { $exists: false } }, { $set: { role: "student" } });
     // 20 studenten — de beheerder vult naam en wachtwoord in via /beheer
     for (let i = 1; i <= STUDENT_COUNT; i++) {
       const u = "user" + i;
       await UserAuth.updateOne(
         { username: u },
-        { $setOnInsert: { password: u, displayName: u, isAdmin: false } },
+        { $setOnInsert: { password: u, displayName: u, isAdmin: false, role: "student" } },
         { upsert: true }
       );
     }
@@ -256,12 +423,56 @@ async function syncUsers() {
   const all = await UserAuth.find();
   Object.keys(USERS).forEach(k => delete USERS[k]);
   Object.keys(NAMES).forEach(k => delete NAMES[k]);
+  Object.keys(ROLES).forEach(k => delete ROLES[k]);
   ADMINS.clear();
   all.forEach(u => {
     USERS[u.username] = u.password;
     NAMES[u.username] = u.displayName || u.username;
+    ROLES[u.username] = ROLLEN.includes(u.role) ? u.role : "student";
     if (u.isAdmin) ADMINS.add(u.username);
   });
+}
+
+/* ---------------------- gast- en ICW-plekken ----------------------- *
+ *  Een "plek" is gewoon een account met een rol. De beheerder maakt er
+ *  eentje bij in beheer; een gast claimt een vrije plek zelf (als dat
+ *  openstaat) en een junior ICW-student krijgt er een toegewezen zodra
+ *  zijn aanvraag goedgekeurd is.
+ * ------------------------------------------------------------------ */
+
+const ROL_PREFIX = { gast: "gast", icw: "icw" };
+
+function nieuwWachtwoord() {
+  // leesbaar genoeg om door te geven, lang genoeg om niet te raden
+  return crypto.randomBytes(6).toString("base64url").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8);
+}
+
+// maakt de volgende vrije plek aan, bv. gast3 of icw2
+async function maakPlek(rol) {
+  const prefix = ROL_PREFIX[rol];
+  if (!prefix) throw new Error("onbekende soort plek");
+  const bestaand = await UserAuth.find({ role: rol }, { username: 1, _id: 0 });
+  const nummers = bestaand
+    .map(u => parseInt((String(u.username).match(/(\d+)$/) || [])[1] || "0", 10))
+    .filter(n => n > 0);
+  const n = (nummers.length ? Math.max(...nummers) : 0) + 1;
+  const username = prefix + n;
+  const password = nieuwWachtwoord();
+  const displayName = rol === "gast" ? "gast " + n : "ICW junior " + n;
+  await UserAuth.create({ username, password, displayName, isAdmin: false, role: rol, claimed: false });
+  await syncUsers();
+  return { username, password, displayName, role: rol };
+}
+
+// eerste plek die nog van niemand is
+async function vrijePlek(rol) {
+  return UserAuth.findOne({ role: rol, claimed: { $ne: true } });
+}
+
+async function telPlekken(rol) {
+  const totaal = await UserAuth.countDocuments({ role: rol });
+  const vrij = await UserAuth.countDocuments({ role: rol, claimed: { $ne: true } });
+  return { totaal, vrij };
 }
 
 async function getUserData(username) {
@@ -376,10 +587,11 @@ async function migrateDiskFilesToGridFS() {
 
 /* --------------------------- achtergronden ------------------------- */
 /* Een achtergrond is óf een vaste keuze (bgPreset) óf een eigen afbeelding
-   die net als andere uploads in GridFS staat. De straat-achtergrond hoort
-   bij niemand in het bijzonder en krijgt daarom een vaste "groep". */
+   die net als andere uploads in GridFS staat. De achtergrond van een bord
+   hoort bij niemand in het bijzonder en krijgt daarom een vaste "groep". */
 
-const STRAAT_BG_GROUP = "__straat__";
+// alle groep-ids die van een bord zijn en dus niet van een groepchat
+const BORD_BG_GROUPS = new Set(Object.values(BORDEN).map(b => b.bgGroup));
 const PRESETS = ["aqua", "lucht", "gras", "zonsondergang", "nacht", "papier"];
 
 // slaat een geüploade achtergrond op en ruimt de vorige meteen op
@@ -415,22 +627,31 @@ async function removeBackgroundImage(fileId) {
   await recalcStorage();
 }
 
-async function getStraat(date) {
-  let doc = await Straat.findOne({ date });
+/* Het bord van een dag ophalen, en aanmaken als het er nog niet is. Alleen
+   het lokaal erft de achtergrond die de beheerder in de instellingen zette;
+   het gastbord begint elke dag gewoon wit. */
+async function getBord(bordId, date) {
+  const bord = bordVan(bordId);
+  if (!bord) throw new Error("onbekend bord");
+  let doc = await bord.model.findOne({ date });
   if (!doc) {
-    const s = await getSettings();
-    doc = await Straat.create({
+    const s = bordId === "lokaal" ? await getSettings() : null;
+    doc = await bord.model.create({
       date, items: [], contributors: [],
-      bgPreset: s.straatBgPreset || "", bgFileId: s.straatBgFileId || null,
+      bgPreset: (s && s.straatBgPreset) || "",
+      bgFileId: (s && s.straatBgFileId) || null,
     });
   }
   return doc;
 }
 
+// het lokaal is het bord dat het inlogscherm en het archief bedoelen
+function getStraat(date) { return getBord("lokaal", date); }
+
 /* --------------------------- Maes-AI ------------------------------ */
 
 function maesPrompt(name) {
-  return `Je bent Maes-AI, de AI van drerries-ai. Je helpt studenten. Je antwoordt in gewoon, casual Nederlands, zoals je een klasgenoot een berichtje stuurt.
+  return `Je bent Maes-AI, de AI van lokaal b16. Je helpt studenten. Je antwoordt in gewoon, casual Nederlands, zoals je een klasgenoot een berichtje stuurt.
 
 STIJL:
 direct en kort, geen lange uitleg tenzij het echt nodig is
@@ -474,7 +695,7 @@ geen herhaling van de vraag`;
 }
 
 function maesGroepPrompt(groupName) {
-  return `Je bent Maes-AI, opgeroepen met /Maes in de groepchat "${groupName}" van drerries-ai.
+  return `Je bent Maes-AI, opgeroepen met /Maes in de groepchat "${groupName}" van lokaal b16.
 
 Je praat mee in een groepchat met studenten. Antwoord kort, casual Nederlands, direct op de vraag. Je ziet de laatste berichten van de groep als context.
 
@@ -512,6 +733,18 @@ function requireAuth(req, res, next) {
   next();
 }
 
+/* Poortjes per recht. De browser verbergt knoppen die je niet mag, maar
+   dát is geen beveiliging — dit hier is het. */
+function requireRecht(naam, boodschap) {
+  return (req, res, next) => {
+    if (!rechtenVan(req.username)[naam]) return res.status(403).json({ error: boodschap });
+    next();
+  };
+}
+
+const magGroepen = requireRecht("groepen", "groepen zijn voor de klas; als gast heb je het gastbord");
+const magDoekoe = requireRecht("doekoe", "de doekoeverzamelaar is voor de studenten van de klas");
+
 function requireAdmin(req, res, next) {
   const token = req.headers["x-auth-token"];
   if (!token || !tokens[token]) return res.status(401).json({ error: "niet ingelogd" });
@@ -539,6 +772,7 @@ app.post("/login", async (req, res) => {
       token,
       username: u,
       displayName: NAMES[u] || u,
+      role: ROLES[u] || "student",
       pfp: data.pfp,
       isAdmin: ADMINS.has(u),
       pct: pctOf(data),
@@ -547,6 +781,124 @@ app.post("/login", async (req, res) => {
     console.error("login error:", e.message);
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+/* ------------------- gastplekken en ICW-aanvragen ------------------ */
+
+app.get("/public/spots", async (req, res) => {
+  try {
+    const s = await getSettings();
+    const gast = await telPlekken("gast");
+    const icw = await telPlekken("icw");
+    res.json({
+      gastOpen: !!s.gastOpen,
+      gastVrij: gast.vrij, gastTotaal: gast.totaal,
+      icwVrij: icw.vrij, icwTotaal: icw.totaal,
+    });
+  } catch (e) {
+    res.json({ gastOpen: false, gastVrij: 0, gastTotaal: 0, icwVrij: 0, icwTotaal: 0 });
+  }
+});
+
+// een gast neemt zelf een vrije plek, mits de beheerder dat heeft opengezet
+app.post("/public/guest-login", async (req, res) => {
+  try {
+    const s = await getSettings();
+    if (!s.gastOpen) return res.status(403).json({ error: "de gastplekken staan dicht" });
+
+    const naam = String(req.body.displayName || "").trim().slice(0, 24);
+    if (naam.length < 2) return res.status(400).json({ error: "vul een naam in waaraan iedereen je herkent" });
+
+    const plek = await vrijePlek("gast");
+    if (!plek) return res.status(409).json({ error: "alle gastplekken zijn bezet. probeer het later opnieuw." });
+
+    plek.displayName = naam;
+    plek.claimed = true;
+    plek.claimedAt = Date.now();
+    await plek.save();
+    await syncUsers();
+
+    const token = crypto.randomBytes(24).toString("hex");
+    tokens[token] = plek.username;
+    await Session.create({ token, username: plek.username }).catch(() => {});
+
+    const data = await getUserData(plek.username);
+    res.json({
+      success: true, token,
+      username: plek.username, displayName: naam, role: "gast",
+      pfp: data.pfp, isAdmin: false, pct: pctOf(data),
+    });
+  } catch (e) {
+    console.error("gast-login:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function ssKey(naam) {
+  return String(naam || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// een junior ICW-student vraagt een plek aan met zijn Smartschool-naam
+app.post("/public/junior-request", async (req, res) => {
+  try {
+    const smartschool = String(req.body.smartschool || "").trim().slice(0, 60);
+    if (smartschool.length < 3) return res.status(400).json({ error: "vul je Smartschool-naam in" });
+
+    const key = ssKey(smartschool);
+    const bestaand = await JuniorRequest.findOne({ smartschoolKey: key }).sort({ createdAt: -1 });
+    if (bestaand && bestaand.status !== "geweigerd") {
+      return res.json({ success: true, alGevraagd: true, status: bestaand.status, id: bestaand.id });
+    }
+
+    const r = await JuniorRequest.create({
+      id: rid(10),
+      smartschool,
+      smartschoolKey: key,
+      bericht: String(req.body.bericht || "").trim().slice(0, 240),
+      status: "open",
+    });
+    res.json({ success: true, id: r.id, status: "open" });
+  } catch (e) {
+    console.error("junior-aanvraag:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* De gegevens die we teruggeven halen we uit het account zelf, niet uit de
+   aanvraag. Verandert de beheerder daarna het wachtwoord van die plek, dan
+   ziet de aanvrager meteen het juiste — anders staat hij met een wachtwoord
+   dat niet meer werkt voor een deur die wel voor hem openstaat. */
+async function plekVanAanvraag(r) {
+  if (r.status !== "goedgekeurd" || !r.username) return null;
+  const u = await UserAuth.findOne({ username: r.username });
+  if (!u) return null;
+  return { username: u.username, password: u.password };
+}
+
+// de aanvrager volgt zijn aanvraag op met dezelfde Smartschool-naam
+app.get("/public/junior-request", async (req, res) => {
+  const key = ssKey(req.query.naam);
+  if (!key) return res.status(400).json({ error: "vul je Smartschool-naam in" });
+  const r = await JuniorRequest.findOne({ smartschoolKey: key }).sort({ createdAt: -1 });
+  if (!r) return res.status(404).json({ error: "we vinden geen aanvraag met die naam" });
+
+  const plek = await plekVanAanvraag(r);
+  if (r.status === "goedgekeurd" && !plek) {
+    return res.json({
+      status: "ingetrokken", smartschool: r.smartschool, createdAt: r.createdAt,
+      reden: "je plek bestaat niet meer. vraag de beheerder wat er gebeurd is.",
+      username: null, password: null,
+    });
+  }
+  res.json({
+    status: r.status,
+    smartschool: r.smartschool,
+    reden: r.reden || "",
+    createdAt: r.createdAt,
+    // de gegevens komen er pas bij zodra de beheerder goedkeurt
+    username: plek ? plek.username : null,
+    password: plek ? plek.password : null,
+  });
 });
 
 app.post("/logout", requireAuth, async (req, res) => {
@@ -560,15 +912,25 @@ app.get("/me", requireAuth, async (req, res) => {
   res.json({
     username: req.username,
     displayName: NAMES[req.username] || req.username,
+    role: ROLES[req.username] || "student",
+    rechten: rechtenVan(req.username),
     pfp: data.pfp,
     isAdmin: ADMINS.has(req.username),
     spend: data.spend,
     pct: pctOf(data),
     maxEuro: MAX_EURO, budget: budgetOf(data), earned: data.earned || 0,
     trialEuro: TRIAL_EURO,
+    cooldownMs: ADMINS.has(req.username) ? 0 : LOKAAL_COOLDOWN_MS,
+    maesOver: maesOver(req.username, data),
     limits: { image: IMAGE_MAX, file: FILE_MAX },
   });
 });
+
+// hoeveel berichten een gast nog van Maes-AI mag; null = onbeperkt
+function maesOver(username, data) {
+  if (rechtenVan(username).maes !== "proef") return null;
+  return Math.max(0, GAST_MAES_LIMIET - (data.maesGebruikt || 0));
+}
 
 app.post("/me/pfp", requireAuth, memUpload.single("pfp"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "geen foto" });
@@ -579,19 +941,54 @@ app.post("/me/pfp", requireAuth, memUpload.single("pfp"), async (req, res) => {
   res.json({ success: true, pfp: base64 });
 });
 
-/* ----------------------------- straat ----------------------------- */
+/* ------------------------------ borden ---------------------------- *
+ *  Er zijn twee borden met precies dezelfde mogelijkheden:
+ *
+ *    lokaal  — het bord van de klas. Iedereen ziet het; gasten kijken
+ *              alleen mee en schrijven er niet in.
+ *    gast    — het bord van de gasten, met een eigen chat. Gasten en de
+ *              beheerder komen erop, de klas niet.
+ *
+ *  Alles hieronder werkt op allebei. Welk bord het is staat in de URL
+ *  (/bord/lokaal/... of /bord/gast/...) en wordt door bordToegang
+ *  gecontroleerd — niet door de browser.
+ * ------------------------------------------------------------------ */
+
+// haalt het bord uit de URL en kijkt of deze gebruiker erop mag
+function bordToegang(schrijven) {
+  return (req, res, next) => {
+    const bord = bordVan(req.params.bord);
+    if (!bord) return res.status(404).json({ error: "dat bord bestaat niet" });
+    const mag = bordRechten(req.username, bord.id);
+    if (!mag.lezen) return res.status(403).json({ error: "dit bord is niet voor jou" });
+    if (schrijven && !mag.schrijven) {
+      return res.status(403).json({
+        error: bord.id === "lokaal"
+          ? "als gast kan je het lokaal bekijken, niet erin schrijven"
+          : "je mag hier niet schrijven",
+      });
+    }
+    req.bord = bord;
+    next();
+  };
+}
 
 // het bord van vandaag
-app.get("/straat", requireAuth, async (req, res) => {
+app.get("/bord/:bord", requireAuth, bordToegang(false), async (req, res) => {
   const date = todayKey();
-  const doc = await getStraat(date);
-  res.json({ date, items: doc.items, contributors: doc.contributors, bgPreset: doc.bgPreset, bgFileId: doc.bgFileId });
+  const doc = await getBord(req.bord.id, date);
+  const mag = bordRechten(req.username, req.bord.id);
+  res.json({
+    bord: req.bord.id, date, items: doc.items, contributors: doc.contributors,
+    bgPreset: doc.bgPreset, bgFileId: doc.bgFileId, schrijven: mag.schrijven,
+  });
 });
 
 // archief — elke dag, nieuwste eerst
-app.get("/straat/archive", requireAuth, async (req, res) => {
+app.get("/bord/:bord/archive", requireAuth, bordToegang(false), async (req, res) => {
   const today = todayKey();
-  const docs = await Straat.find({}, { date: 1, items: 1, contributors: 1, _id: 0 }).sort({ date: -1 }).limit(120);
+  const docs = await req.bord.model
+    .find({}, { date: 1, items: 1, contributors: 1, _id: 0 }).sort({ date: -1 }).limit(120);
   res.json({
     days: docs.map(d => ({
       date: d.date,
@@ -603,68 +1000,137 @@ app.get("/straat/archive", requireAuth, async (req, res) => {
   });
 });
 
-// publieke chat van de straat
-app.get("/straat/chat", requireAuth, async (req, res) => {
-  const messages = await StraatChat.find().sort({ time: -1 }).limit(STRAAT_CHAT_KEEP);
+// de publieke chat die bij dit bord hoort
+app.get("/bord/:bord/chat", requireAuth, bordToegang(false), async (req, res) => {
+  const messages = await req.bord.chat.find().sort({ time: -1 }).limit(STRAAT_CHAT_KEEP);
   res.json({ messages: messages.reverse() });
 });
 
 // één dag uit het archief, alleen-lezen
-app.get("/straat/:date", requireAuth, async (req, res) => {
-  const doc = await Straat.findOne({ date: req.params.date });
+app.get("/bord/:bord/dag/:date", requireAuth, bordToegang(false), async (req, res) => {
+  const doc = await req.bord.model.findOne({ date: req.params.date });
   if (!doc) return res.status(404).json({ error: "die dag bestaat niet" });
-  res.json({ date: doc.date, items: doc.items, contributors: doc.contributors, readonly: doc.date !== todayKey(), bgPreset: doc.bgPreset, bgFileId: doc.bgFileId });
+  res.json({
+    date: doc.date, items: doc.items, contributors: doc.contributors,
+    readonly: doc.date !== todayKey(), bgPreset: doc.bgPreset, bgFileId: doc.bgFileId,
+  });
 });
 
-// achtergrond van de straat — alleen de beheerder
-app.post("/straat/background", requireAdmin, (req, res) => {
+// achtergrond van een bord — alleen de beheerder
+app.post("/bord/:bord/background", requireAdmin, bordToegang(false), (req, res) => {
   groupUpload.single("image")(req, res, async (err) => {
     if (err) {
       return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "afbeelding is te groot (max 5 MB)" : err.message });
     }
     try {
       const date = todayKey();
-      const doc = await getStraat(date);
-      const instellingen = await getSettings();
+      const doc = await getBord(req.bord.id, date);
       const vorige = doc.bgFileId;
+      // alleen het lokaal onthoudt zijn achtergrond voor de volgende dagen
+      const instellingen = req.bord.id === "lokaal" ? await getSettings() : null;
 
       if (req.file) {
         if ((req.file.mimetype || "").startsWith("image/") && req.file.size > IMAGE_MAX) {
           fs.unlinkSync(req.file.path);
           return res.status(400).json({ error: "afbeelding is te groot (max 5 MB)" });
         }
-        const fileId = await saveBackgroundImage(req.file, STRAAT_BG_GROUP, req.username, vorige);
+        const fileId = await saveBackgroundImage(req.file, req.bord.bgGroup, req.username, vorige);
         doc.bgFileId = fileId; doc.bgPreset = "";
-        instellingen.straatBgFileId = fileId; instellingen.straatBgPreset = "";
+        if (instellingen) { instellingen.straatBgFileId = fileId; instellingen.straatBgPreset = ""; }
       } else if (req.body.clear) {
         if (vorige) await removeBackgroundImage(vorige);
         doc.bgFileId = null; doc.bgPreset = "";
-        instellingen.straatBgFileId = null; instellingen.straatBgPreset = "";
+        if (instellingen) { instellingen.straatBgFileId = null; instellingen.straatBgPreset = ""; }
       } else {
         const preset = String(req.body.preset || "");
         if (!PRESETS.includes(preset)) return res.status(400).json({ error: "onbekende achtergrond" });
         if (vorige) await removeBackgroundImage(vorige);
         doc.bgPreset = preset; doc.bgFileId = null;
-        instellingen.straatBgPreset = preset; instellingen.straatBgFileId = null;
+        if (instellingen) { instellingen.straatBgPreset = preset; instellingen.straatBgFileId = null; }
       }
 
       await doc.save();
-      await instellingen.save();
-      const payload = { bgPreset: doc.bgPreset, bgFileId: doc.bgFileId };
-      io.to("straat").emit("straat:background", payload);
+      if (instellingen) await instellingen.save();
+      const payload = { bord: req.bord.id, bgPreset: doc.bgPreset, bgFileId: doc.bgFileId };
+      io.to(req.bord.room).emit("bord:background", payload);
       res.json(Object.assign({ success: true }, payload));
     } catch (e) {
-      console.error("straat achtergrond:", e.message);
+      console.error("achtergrond van bord:", e.message);
       res.status(500).json({ error: e.message });
     }
   });
 });
 
 // beheerder mag het bord van vandaag leegmaken
-app.post("/straat/clear", requireAdmin, async (req, res) => {
+app.post("/bord/:bord/clear", requireAdmin, bordToegang(false), async (req, res) => {
   const date = todayKey();
-  await Straat.updateOne({ date }, { $set: { items: [], contributors: [], updatedAt: Date.now() } }, { upsert: true });
-  io.to("straat").emit("straat:cleared");
+  await req.bord.model.updateOne(
+    { date },
+    { $set: { items: [], contributors: [], updatedAt: Date.now() } },
+    { upsert: true }
+  );
+  io.to(req.bord.room).emit("bord:cleared", { bord: req.bord.id });
+  res.json({ success: true });
+});
+
+/* ---------------------- moderatie van een bord --------------------- *
+ *  De beheerder ziet wie wat getekend of getypt heeft en kan één ding
+ *  weghalen zonder het hele bord leeg te gooien. Dat is het verschil
+ *  tussen bijsturen en alles kwijt zijn.
+ * ------------------------------------------------------------------ */
+
+// wie heeft wat gezet — alleen voor de beheerder
+app.get("/bord/:bord/wie", requireAdmin, bordToegang(false), async (req, res) => {
+  const doc = await getBord(req.bord.id, todayKey());
+  const perPersoon = {};
+  for (const i of doc.items || []) {
+    const u = i.u || "onbekend";
+    if (!perPersoon[u]) perPersoon[u] = { username: u, displayName: i.n || u, lijnen: 0, teksten: 0, laatste: 0 };
+    if (i.t === "s") perPersoon[u].lijnen++; else perPersoon[u].teksten++;
+    perPersoon[u].laatste = Math.max(perPersoon[u].laatste, i.ts || 0);
+  }
+  res.json({
+    date: doc.date,
+    items: (doc.items || []).map(i => ({
+      id: i.id, t: i.t, u: i.u, n: i.n, ts: i.ts,
+      tekst: i.t === "x" ? i.text : null,
+    })),
+    personen: Object.values(perPersoon).sort((a, b) => b.laatste - a.laatste),
+  });
+});
+
+// één lijn of tekst weghalen
+app.delete("/bord/:bord/item/:id", requireAdmin, bordToegang(false), async (req, res) => {
+  const doc = await getBord(req.bord.id, todayKey());
+  const item = (doc.items || []).find(i => i.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "dat staat er niet (meer) op" });
+
+  doc.items = doc.items.filter(i => i.id !== req.params.id);
+  // iemand die niets meer op het bord heeft staan, hoort ook niet meer
+  // onder "vandaag getekend door"
+  const namenOver = new Set(doc.items.map(i => i.n).filter(Boolean));
+  doc.contributors = (doc.contributors || []).filter(n => namenOver.has(n));
+  doc.updatedAt = Date.now();
+  doc.markModified("items");
+  await doc.save();
+
+  io.to(req.bord.room).emit("bord:item-weg", { bord: req.bord.id, id: req.params.id });
+  res.json({ success: true, door: item.n || item.u || "onbekend" });
+});
+
+// een bericht uit de chat van dit bord halen
+app.delete("/bord/:bord/chat/:id", requireAdmin, bordToegang(false), async (req, res) => {
+  const msg = await req.bord.chat.findOne({ id: req.params.id });
+  if (!msg) return res.status(404).json({ error: "dat bericht bestaat niet meer" });
+  await req.bord.chat.deleteOne({ id: req.params.id });
+  io.to(req.bord.room).emit("bord:chat-weg", { bord: req.bord.id, id: req.params.id });
+  res.json({ success: true, door: msg.displayName });
+});
+
+// de hele chat van dit bord leegmaken
+app.post("/bord/:bord/chat/clear", requireAdmin, bordToegang(false), async (req, res) => {
+  await req.bord.chat.deleteMany({});
+  io.to(req.bord.room).emit("bord:chat-leeg", { bord: req.bord.id });
   res.json({ success: true });
 });
 
@@ -676,13 +1142,60 @@ async function getSettings() {
   return s;
 }
 
-// publiek: het inlogscherm moet dit kunnen ophalen vóór je ingelogd bent
+const LOGIN_BG = ["leeg", "tekening", "afbeelding"];
+
+/* publiek: het inlogscherm moet dit kunnen ophalen vóór je ingelogd bent.
+
+   Staat de achtergrond op "tekening", dan gaat het lokaal van vandaag mee
+   naar buiten. Dat is een bewuste keuze van de beheerder, dus we sturen wél
+   de lijnen en teksten maar NOOIT de namen die eraan hangen: wie niet
+   ingelogd is hoeft niet te weten wie wat getekend heeft. */
 app.get("/public/login-screen", async (req, res) => {
   try {
     const s = await getSettings();
-    res.json({ title: s.loginTitle || "", text: s.loginText || "", image: s.loginImage || null });
+    const bg = LOGIN_BG.includes(s.loginBg) ? s.loginBg : "leeg";
+    const out = {
+      title: s.loginTitle || "",
+      text: s.loginText || "",
+      image: bg === "afbeelding" ? (s.loginImage || null) : null,
+      heeftAfbeelding: !!s.loginImage,
+      bg,
+    };
+    if (bg === "tekening") {
+      const doc = await getStraat(todayKey());
+      out.tekening = {
+        date: doc.date,
+        items: (doc.items || []).map(i => {
+          const { u, n, id, ts, ...rest } = i;   // namen blijven binnen
+          return rest;
+        }),
+        bgPreset: doc.bgPreset || "",
+        heeftEigenAchtergrond: !!doc.bgFileId,
+      };
+    }
+    res.json(out);
   } catch (e) {
-    res.json({ title: "", text: "", image: null });
+    res.json({ title: "", text: "", image: null, bg: "leeg" });
+  }
+});
+
+// de eigen achtergrondafbeelding van het lokaal, alleen als de beheerder de
+// tekening op het inlogscherm heeft gezet
+app.get("/public/lokaal-bg", async (req, res) => {
+  try {
+    const s = await getSettings();
+    if (s.loginBg !== "tekening") return res.status(404).send("niet beschikbaar");
+    const doc = await getStraat(todayKey());
+    if (!doc.bgFileId) return res.status(404).send("geen achtergrond");
+    const f = await FileDoc.findOne({ id: doc.bgFileId });
+    if (!f || f.storage !== "gridfs" || !bucket) return res.status(404).send("geen achtergrond");
+    res.setHeader("Content-Type", f.mime || "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=300");
+    bucket.openDownloadStream(new mongoose.Types.ObjectId(String(f.stored)))
+      .on("error", () => { if (!res.headersSent) res.status(410).send("weg"); })
+      .pipe(res);
+  } catch (e) {
+    res.status(500).send("er ging iets mis");
   }
 });
 
@@ -690,19 +1203,28 @@ app.post("/admin/login-screen", requireAdmin, async (req, res) => {
   const s = await getSettings();
   if (typeof req.body.title === "string") s.loginTitle = req.body.title.slice(0, 80);
   if (typeof req.body.text === "string") s.loginText = req.body.text.slice(0, 400);
-  if (req.body.clearImage) s.loginImage = null;
+  if (typeof req.body.bg === "string") {
+    if (!LOGIN_BG.includes(req.body.bg)) return res.status(400).json({ error: "onbekende achtergrond" });
+    s.loginBg = req.body.bg;
+  }
+  if (req.body.clearImage) {
+    s.loginImage = null;
+    if (s.loginBg === "afbeelding") s.loginBg = "leeg";
+  }
   s.updatedAt = Date.now();
   await s.save();
-  res.json({ success: true, title: s.loginTitle, text: s.loginText, image: s.loginImage });
+  res.json({ success: true, title: s.loginTitle, text: s.loginText, image: s.loginImage, bg: s.loginBg });
 });
 
 app.post("/admin/login-screen/image", requireAdmin, memUpload.single("image"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "geen afbeelding" });
   const s = await getSettings();
   s.loginImage = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+  // wie een afbeelding kiest, wil ze ook zien
+  s.loginBg = "afbeelding";
   s.updatedAt = Date.now();
   await s.save();
-  res.json({ success: true, image: s.loginImage });
+  res.json({ success: true, image: s.loginImage, bg: s.loginBg });
 });
 
 // eigen iconen: alles wat in frontend/icons staat vervangt de emoji met dezelfde naam
@@ -722,7 +1244,7 @@ app.get("/api/icons", (req, res) => {
 
 /* ----------------------------- groepen ---------------------------- */
 
-app.get("/groups", requireAuth, async (req, res) => {
+app.get("/groups", requireAuth, magGroepen, async (req, res) => {
   const list = await Group.find({ members: req.username });
   const out = await Promise.all(list.map(async g => {
     const last = await GroupMessage.findOne({ groupId: g.id }).sort({ time: -1 });
@@ -738,7 +1260,7 @@ app.get("/groups", requireAuth, async (req, res) => {
   res.json({ groups: out });
 });
 
-app.post("/groups", requireAuth, async (req, res) => {
+app.post("/groups", requireAuth, magGroepen, async (req, res) => {
   const name = (req.body.name || "").trim();
   if (!name) return res.status(400).json({ error: "geef je groep een naam" });
   if (name.length > 40) return res.status(400).json({ error: "naam is te lang" });
@@ -752,7 +1274,7 @@ app.post("/groups", requireAuth, async (req, res) => {
   res.json({ success: true, group: { id: g.id, name: g.name, code: g.code, owner: g.owner, members: g.members } });
 });
 
-app.post("/groups/join", requireAuth, async (req, res) => {
+app.post("/groups/join", requireAuth, magGroepen, async (req, res) => {
   const code = (req.body.code || "").trim().toUpperCase();
   const g = await Group.findOne({ code });
   if (!g) return res.status(404).json({ error: "geen groep met die code" });
@@ -764,7 +1286,7 @@ app.post("/groups/join", requireAuth, async (req, res) => {
   res.json({ success: true, group: { id: g.id, name: g.name, code: g.code, owner: g.owner, members: g.members } });
 });
 
-app.get("/groups/:id", requireAuth, async (req, res) => {
+app.get("/groups/:id", requireAuth, magGroepen, async (req, res) => {
   const g = await Group.findOne({ id: req.params.id });
   if (!g) return res.status(404).json({ error: "groep niet gevonden" });
   if (!g.members.includes(req.username)) return res.status(403).json({ error: "je zit niet in deze groep" });
@@ -777,14 +1299,14 @@ app.get("/groups/:id", requireAuth, async (req, res) => {
   });
 });
 
-app.get("/groups/:id/messages", requireAuth, async (req, res) => {
+app.get("/groups/:id/messages", requireAuth, magGroepen, async (req, res) => {
   const g = await Group.findOne({ id: req.params.id });
   if (!g || !g.members.includes(req.username)) return res.status(403).json({ error: "geen toegang" });
   const msgs = await GroupMessage.find({ groupId: g.id }).sort({ time: 1 }).limit(200);
   res.json({ messages: msgs });
 });
 
-app.post("/groups/:id/leave", requireAuth, async (req, res) => {
+app.post("/groups/:id/leave", requireAuth, magGroepen, async (req, res) => {
   const g = await Group.findOne({ id: req.params.id });
   if (!g) return res.status(404).json({ error: "groep niet gevonden" });
   g.members = g.members.filter(m => m !== req.username);
@@ -801,7 +1323,7 @@ app.post("/groups/:id/leave", requireAuth, async (req, res) => {
 });
 
 // upload — afbeeldingen max 5 MB, andere bestanden max 20 MB
-app.post("/groups/:id/upload", requireAuth, (req, res) => {
+app.post("/groups/:id/upload", requireAuth, magGroepen, (req, res) => {
   groupUpload.single("file")(req, res, async (err) => {
     if (err) {
       return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "bestand is te groot (max 20 MB)" : err.message });
@@ -875,7 +1397,7 @@ app.post("/groups/:id/upload", requireAuth, (req, res) => {
 });
 
 // achtergrond van een groepchat — iedereen in de groep mag hem veranderen
-app.post("/groups/:id/background", requireAuth, (req, res) => {
+app.post("/groups/:id/background", requireAuth, magGroepen, (req, res) => {
   groupUpload.single("image")(req, res, async (err) => {
     if (err) {
       return res.status(400).json({ error: err.code === "LIMIT_FILE_SIZE" ? "afbeelding is te groot (max 5 MB)" : err.message });
@@ -929,8 +1451,8 @@ app.get("/files/:id", async (req, res) => {
   if (!token || !tokens[token]) return res.status(401).send("niet ingelogd");
   const f = await FileDoc.findOne({ id: req.params.id });
   if (!f) return res.status(404).send("bestand niet gevonden");
-  // de achtergrond van de straat is voor iedereen die ingelogd is
-  if (f.groupId !== STRAAT_BG_GROUP) {
+  // de achtergrond van een bord is voor iedereen die dat bord mag zien
+  if (!BORD_BG_GROUPS.has(f.groupId)) {
     const g = await Group.findOne({ id: f.groupId });
     if (!g || !g.members.includes(tokens[token])) return res.status(403).send("geen toegang");
   }
@@ -951,6 +1473,167 @@ app.get("/files/:id", async (req, res) => {
   const full = path.join(UPLOAD_DIR, f.stored || "");
   if (!f.stored || !fs.existsSync(full)) return res.status(410).send("bestand is weg");
   fs.createReadStream(full).pipe(res);
+});
+
+/* --------------------------- downloads ---------------------------- */
+/* Programma's die de klas mag ophalen, zoals MaasAI.exe. Twee dingen maken
+   dit anders dan een bijlage in een groep:
+
+   Het staat achter de login. Niet omdat het geheim is, maar omdat een .exe die
+   voor iedereen op het open internet staat vroeg of laat ergens opduikt waar
+   niemand hem gezet heeft. Wie ingelogd is mag hem hebben.
+
+   Alleen de beheerder zet hem neer. Een upload vervangt de vorige versie en
+   ruimt die meteen op, zodat er nooit twee builds tegelijk in de opslag
+   staan. */
+
+function opruimen(pad) {
+  try { if (pad && fs.existsSync(pad)) fs.unlinkSync(pad); } catch (e) { /* niet erg */ }
+}
+
+const downloadUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, TMP_DIR),
+    filename: (req, file, cb) =>
+      cb(null, "dl-" + Date.now() + "-" + crypto.randomBytes(4).toString("hex")),
+  }),
+  limits: { fileSize: DOWNLOAD_MAX },
+});
+
+function downloadPubliek(d) {
+  return {
+    sleutel: d.sleutel,
+    titel: d.titel,
+    omschrijving: d.omschrijving,
+    bestandsnaam: d.bestandsnaam,
+    versie: d.versie,
+    grootte: d.grootte,
+    uploadedAt: d.uploadedAt,
+    keer: d.keer,
+  };
+}
+
+// wat er klaarstaat; het scherm gebruikt dit om de knop te tonen of te verbergen
+app.get("/downloads", requireAuth, async (req, res) => {
+  try {
+    const alles = await Download.find().sort({ titel: 1 });
+    res.json({ success: true, downloads: alles.map(downloadPubliek) });
+  } catch (e) {
+    console.error("downloads lijst:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/* Het bestand zelf. De token mag hier ook in de query, want een download is
+   een gewone navigatie van de browser en die stuurt geen x-auth-token mee.
+   Zelfde afweging als bij /files/:id hierboven. */
+app.get("/downloads/:sleutel/bestand", async (req, res) => {
+  const token = req.query.t || req.headers["x-auth-token"];
+  if (!token || !tokens[token]) return res.status(401).send("niet ingelogd");
+
+  const d = await Download.findOne({ sleutel: req.params.sleutel });
+  if (!d || !d.stored) return res.status(404).send("er staat hier niets klaar");
+  if (!bucket) return res.status(503).send("opslag nog niet klaar");
+
+  res.setHeader("Content-Type", d.mime || "application/octet-stream");
+  res.setHeader(
+    "Content-Disposition",
+    "attachment; filename*=UTF-8''" + encodeURIComponent(d.bestandsnaam)
+  );
+  if (d.grootte) res.setHeader("Content-Length", String(d.grootte));
+  // een programma van tientallen megabytes hoort niet in een browsercache
+  res.setHeader("Cache-Control", "private, no-store");
+
+  // pas tellen als het downloaden echt begint, en het mag stilletjes mislukken
+  Download.updateOne({ sleutel: d.sleutel }, { $inc: { keer: 1 } }).catch(() => {});
+
+  bucket.openDownloadStream(new mongoose.Types.ObjectId(String(d.stored)))
+    .on("error", () => { if (!res.headersSent) res.status(410).send("bestand is weg"); })
+    .pipe(res);
+});
+
+// neerzetten of vervangen; alleen de beheerder
+app.post("/downloads/:sleutel", requireAdmin, (req, res) => {
+  downloadUpload.single("file")(req, res, async err => {
+    if (err) {
+      const teGroot = err.code === "LIMIT_FILE_SIZE";
+      return res.status(teGroot ? 413 : 400).json({
+        error: teGroot
+          ? "het bestand is groter dan " + (DOWNLOAD_MAX / 1048576).toFixed(0) + " MB"
+          : err.message,
+      });
+    }
+    if (!req.file) return res.status(400).json({ error: "geen bestand meegestuurd" });
+    if (!bucket) {
+      opruimen(req.file.path);
+      return res.status(503).json({ error: "opslag nog niet klaar" });
+    }
+
+    try {
+      const oud = await Download.findOne({ sleutel: req.params.sleutel });
+      // de vorige versie telt niet mee: die gaat er zo uit
+      const inGebruik = storageUsed - (oud ? oud.grootte : 0);
+      if (inGebruik + req.file.size > STORAGE_BUDGET) {
+        opruimen(req.file.path);
+        return res.status(507).json({
+          error: "dit past niet: " + (req.file.size / 1048576).toFixed(0) + " MB erbij op "
+            + (inGebruik / 1048576).toFixed(0) + " van "
+            + (STORAGE_BUDGET / 1048576).toFixed(0) + " MB.",
+        });
+      }
+
+      const naam = req.body.bestandsnaam || req.file.originalname || "download";
+      const id = await saveToGridFS(req.file.path, naam, {
+        soort: "download",
+        sleutel: req.params.sleutel,
+      });
+      opruimen(req.file.path);
+
+      // pas nu de oude weg: mislukt het wegschrijven hierboven, dan staat de
+      // vorige versie er nog gewoon
+      if (oud && oud.stored) await deleteFromGridFS(oud.stored);
+
+      const doc = await Download.findOneAndUpdate(
+        { sleutel: req.params.sleutel },
+        {
+          sleutel: req.params.sleutel,
+          titel: req.body.titel || (oud && oud.titel) || req.params.sleutel,
+          omschrijving: req.body.omschrijving || (oud ? oud.omschrijving : ""),
+          bestandsnaam: naam,
+          versie: req.body.versie || "",
+          mime: req.file.mimetype || "application/octet-stream",
+          grootte: req.file.size,
+          stored: String(id),
+          uploader: req.username,
+          uploadedAt: Date.now(),
+          keer: 0,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+
+      await recalcStorage();
+      console.log('download "' + doc.sleutel + '" bijgewerkt door ' + req.username + ": "
+        + doc.bestandsnaam + ", " + (doc.grootte / 1048576).toFixed(1) + " MB");
+      res.json({ success: true, download: downloadPubliek(doc) });
+    } catch (e) {
+      opruimen(req.file.path);
+      console.error("download upload:", e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+});
+
+app.delete("/downloads/:sleutel", requireAdmin, async (req, res) => {
+  try {
+    const d = await Download.findOne({ sleutel: req.params.sleutel });
+    if (!d) return res.status(404).json({ error: "bestaat niet" });
+    if (d.stored) await deleteFromGridFS(d.stored);
+    await Download.deleteOne({ sleutel: req.params.sleutel });
+    await recalcStorage();
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /* ---------------------------- Maes-AI ----------------------------- */
@@ -997,6 +1680,23 @@ app.post("/chat", requireAuth, chatUpload.single("image"), async (req, res) => {
     const name = NAMES[username] || username;
 
     const data = await getUserData(username);
+
+    /* Een gast krijgt één bericht, als voorbeeld. Dat tellen we hier en
+       niet in de browser: het is de enige plek waar het echt telt, en
+       zonder foto's, want één voorbeeld is één vraag. */
+    const proef = rechtenVan(username).maes === "proef";
+    if (proef) {
+      const over = maesOver(username, data);
+      if (over <= 0) {
+        if (req.file) fs.unlinkSync(req.file.path);
+        return res.json({
+          reply: `je hebt je ${GAST_MAES_LIMIET === 1 ? "voorbeeldvraag" : "voorbeeldvragen"} gebruikt. wil je verder met Maes-AI, vraag dan een plek aan.`,
+          locked: true, maesOver: 0,
+        });
+      }
+      if (req.file) { fs.unlinkSync(req.file.path); req.file = null; }
+    }
+
     if (data.spend >= budgetOf(data)) {
       if (req.file) fs.unlinkSync(req.file.path);
       return res.json({ reply: "je krediet is op. vraag de beheerder om een reset.", locked: true, pct: 100 });
@@ -1042,6 +1742,10 @@ app.post("/chat", requireAuth, chatUpload.single("image"), async (req, res) => {
     const out = await askMaes({ username, messages: history, model, maxTokens });
     if (out.limited) return res.json({ reply: out.reply, locked: true, pct: 100 });
 
+    // pas aftellen als er echt een antwoord is: een gast met één vraag mag
+    // die niet kwijtraken aan een storing bij OpenAI
+    if (proef) data.maesGebruikt = (data.maesGebruikt || 0) + 1;
+
     slot.messages.push({ role: "user", content: storedContent });
     slot.messages.push({ role: "assistant", content: out.reply });
     if (slot.messages.length === 2) {
@@ -1051,14 +1755,14 @@ app.post("/chat", requireAuth, chatUpload.single("image"), async (req, res) => {
     await data.save();
 
     console.log(`[${username}] maes mode:${mode} model:${model} spent:EUR ${out.spend.toFixed(4)}`);
-    res.json({ reply: out.reply, pct: out.pct });
+    res.json({ reply: out.reply, pct: out.pct, maesOver: maesOver(username, data) });
   } catch (e) {
     console.error("chat error:", e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post("/generate-image", requireAuth, async (req, res) => {
+app.post("/generate-image", requireAuth, requireRecht("groepen", "beeld maken is voor de klas"), async (req, res) => {
   try {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: "geen prompt" });
@@ -1075,9 +1779,12 @@ app.post("/generate-image", requireAuth, async (req, res) => {
   }
 });
 
-/* ---------------------------- Code Heist -------------------------- *
- *  Levels om HTML en CSS te leren, plus elke dag één heist. Een gehaalde
- *  dagelijkse heist levert 1 cent krediet op voor Maes-AI.
+/* ------------------------ doekoeverzamelaar ----------------------- *
+ *  Levels om HTML en CSS te leren, plus elke dag één opdracht. Wie de
+ *  doekoe van vandaag binnenhaalt, verdient 1 cent krediet voor Maes-AI.
+ *  (De code hieronder spreekt nog van "heist": dat is de oude naam van
+ *  deze pagina en zit ook in heist-content.js, heist-daily.js en in het
+ *  veld data.heist van elke student. Hernoemen kost data, geen winst.)
  *
  *  Daarom wordt ALLES hier op de server nagekeken en betaalt de server
  *  hoogstens één keer per dag uit. De browser beslist nooit zelf of
@@ -1162,7 +1869,7 @@ function gisteren(datum) {
   return d.toISOString().slice(0, 10);
 }
 
-app.get("/heist", requireAuth, async (req, res) => {
+app.get("/heist", requireAuth, magDoekoe, async (req, res) => {
   const data = await getUserData(req.username);
   const h = heistVan(data);
   const datum = todayKey();
@@ -1170,9 +1877,13 @@ app.get("/heist", requireAuth, async (req, res) => {
   const gedaan = h.daily[datum];
 
   res.json({
+    /* Alleen wat op een kaartje past. De uitleg, de startcode en de
+       eisen van een level haalt de browser pas op als je het opent:
+       met honderd levels scheelt dat 90 kB per keer dat je de pagina
+       opent. Zie GET /heist/level/:id hieronder. */
     levels: LEVELS.map(l => ({
-      id: l.id, titel: l.titel, uitleg: l.uitleg, tip: l.tip, start: l.start,
-      eisen: l.eisen.map(e => e.omschrijving),
+      id: l.id, titel: l.titel, uitleg: l.uitleg,
+      groep: l.groep || "de basis", element: l.element || null,
       klaar: h.levels.includes(l.id),
     })),
     daily: Object.assign(publiekeHeist(vandaag), {
@@ -1194,8 +1905,26 @@ app.get("/heist", requireAuth, async (req, res) => {
   });
 });
 
+// één level opendoen: hier zit de uitlegles, de startcode en de eisen
+app.get("/heist/level/:id", requireAuth, magDoekoe, async (req, res) => {
+  const level = LEVELS.find(l => l.id === req.params.id);
+  if (!level) return res.status(404).json({ error: "level niet gevonden" });
+
+  const data = await getUserData(req.username);
+  const h = heistVan(data);
+
+  res.json({
+    id: level.id, titel: level.titel, uitleg: level.uitleg, tip: level.tip,
+    groep: level.groep || "de basis", element: level.element || null,
+    les: level.les || null,
+    start: level.start,
+    eisen: level.eisen.map(e => e.omschrijving),
+    klaar: h.levels.includes(level.id),
+  });
+});
+
 // een level inleveren — levert voortgang op, geen krediet
-app.post("/heist/level/:id", requireAuth, async (req, res) => {
+app.post("/heist/level/:id", requireAuth, magDoekoe, async (req, res) => {
   const level = LEVELS.find(l => l.id === req.params.id);
   if (!level) return res.status(404).json({ error: "level niet gevonden" });
 
@@ -1214,7 +1943,7 @@ app.post("/heist/level/:id", requireAuth, async (req, res) => {
 });
 
 // de dagelijkse heist — dit is wat krediet oplevert
-app.post("/heist/daily", requireAuth, async (req, res) => {
+app.post("/heist/daily", requireAuth, magDoekoe, async (req, res) => {
   const datum = todayKey();
   const heist = heistVanVandaag(datum);
   const data = await getUserData(req.username);
@@ -1225,7 +1954,7 @@ app.post("/heist/daily", requireAuth, async (req, res) => {
     return res.json({
       geslaagd: true, alGedaan: true, uitbetaald: false,
       waarom: heist.waarom, verdiend: data.earned, pct: pctOf(data),
-      bericht: "je hebt de heist van vandaag al gehaald. morgen weer een nieuwe.",
+      bericht: "je hebt de doekoe van vandaag al binnen. morgen ligt er een nieuwe.",
     });
   }
 
@@ -1270,7 +1999,7 @@ app.post("/heist/daily", requireAuth, async (req, res) => {
 });
 
 // Maes-AI legt uit waarom jouw code niet lukt — dit kost wél krediet
-app.post("/heist/hint", requireAuth, async (req, res) => {
+app.post("/heist/hint", requireAuth, magDoekoe, async (req, res) => {
   try {
     const datum = todayKey();
     const data = await getUserData(req.username);
@@ -1282,7 +2011,7 @@ app.post("/heist/hint", requireAuth, async (req, res) => {
       return res.status(429).json({ error: `je hebt je ${HINT_PER_DAG} hints van vandaag op. morgen weer.` });
     }
     if (data.spend >= budgetOf(data)) {
-      return res.status(403).json({ error: "je krediet is op. haal de dagelijkse heist om bij te verdienen." });
+      return res.status(403).json({ error: "je krediet is op. verzamel de doekoe van vandaag om bij te verdienen." });
     }
 
     /* Geen hints op de dagelijkse heist. Die levert krediet op, en bij deze
@@ -1293,7 +2022,7 @@ app.post("/heist/hint", requireAuth, async (req, res) => {
        leert; de dagelijkse heist doe je zelf. */
     if (!req.body.levelId) {
       return res.status(403).json({
-        error: "op de dagelijkse heist geen hints, die doe je zelf. oefen eerst in de levels.",
+        error: "op de doekoe van vandaag geen hints, die doe je zelf. oefen eerst in de levels.",
       });
     }
 
@@ -1311,7 +2040,7 @@ app.post("/heist/hint", requireAuth, async (req, res) => {
       messages: [
         {
           role: "system",
-          content: `Je bent Maes-AI en helpt een leerling met Code Heist, waar ze HTML en CSS leren.
+          content: `Je bent Maes-AI en helpt een leerling met de doekoeverzamelaar, waar ze HTML en CSS leren.
 
 Je krijgt de opdracht, de eisen en de code van de leerling.
 
@@ -1343,6 +2072,121 @@ niet betuttelen, gewoon normaal praten`,
   }
 });
 
+
+/* ------------------------------- ICW ------------------------------ *
+ *  De pagina "over ICW": een artikel in forumvorm en een quiz die zegt
+ *  of de richting bij je past. De tekst staat in icw-content.js.
+ *
+ *  De punten per antwoord blijven op de server. Niet omdat er iets te
+ *  winnen valt — het is een oriëntatiequiz, geen examen — maar omdat een
+ *  uitslag die je in de console kan uitrekenen niets meer betekent.
+ * ------------------------------------------------------------------ */
+
+// de quiz zonder de punten: precies genoeg om hem te kunnen invullen
+function publiekeQuiz() {
+  return {
+    titel: QUIZ.titel,
+    intro: QUIZ.intro,
+    vragen: QUIZ.vragen.map(v => ({
+      id: v.id,
+      vraag: v.vraag,
+      opties: v.opties.map(o => o.tekst),
+      weetje: v.weetje,
+    })),
+    maxScore: QUIZ.vragen.reduce((n, v) => n + Math.max(...v.opties.map(o => o.punten)), 0),
+  };
+}
+
+app.get("/icw", requireAuth, async (req, res) => {
+  const data = await getUserData(req.username);
+  res.json({
+    artikel: ARTIKEL,
+    quiz: publiekeQuiz(),
+    // heb je hem al eens gedaan, dan tonen we die uitslag opnieuw
+    uitslag: (data.icw && data.icw.quiz) || null,
+  });
+});
+
+app.post("/icw/quiz", requireAuth, async (req, res) => {
+  const antwoorden = Array.isArray(req.body.antwoorden) ? req.body.antwoorden : [];
+  if (antwoorden.length !== QUIZ.vragen.length) {
+    return res.status(400).json({ error: "beantwoord eerst alle vragen" });
+  }
+
+  let score = 0;
+  const perVraag = QUIZ.vragen.map((v, i) => {
+    const keuze = Number(antwoorden[i]);
+    const optie = v.opties[keuze];
+    if (!optie) return { id: v.id, punten: 0, weetje: v.weetje };
+    score += optie.punten;
+    return { id: v.id, keuze, punten: optie.punten, weetje: v.weetje };
+  });
+
+  const uitslag = QUIZ.uitslagen.find(u => score >= u.min) || QUIZ.uitslagen[QUIZ.uitslagen.length - 1];
+  const maxScore = QUIZ.vragen.reduce((n, v) => n + Math.max(...v.opties.map(o => o.punten)), 0);
+
+  const bewaard = {
+    score, maxScore, titel: uitslag.titel, tekst: uitslag.tekst,
+    at: Date.now(), antwoorden: antwoorden.map(Number),
+  };
+
+  const data = await getUserData(req.username);
+  data.icw = Object.assign({}, data.icw, { quiz: bewaard });
+  data.markModified("icw");
+  await data.save();
+
+  res.json(Object.assign({ success: true, perVraag }, bewaard));
+});
+
+/* ------------------- wat is Maes-AI (voor gasten) ------------------ *
+ *  Een gast krijgt geen chatvenster maar een uitleg plus één vraag, als
+ *  voorbeeld. De tekst hieronder klopt met wat er in dit bestand staat:
+ *  als je de werking verandert, verander ze hier ook.
+ * ------------------------------------------------------------------ */
+
+app.get("/maes/uitleg", requireAuth, async (req, res) => {
+  const data = await getUserData(req.username);
+  const over = maesOver(req.username, data);
+  res.json({
+    proef: rechtenVan(req.username).maes === "proef",
+    over,
+    limiet: GAST_MAES_LIMIET,
+    model: MODE_MODELS.regular,
+    stappen: [
+      {
+        kop: "Maes-AI is niet zelf gemaakt, wel zelf gebouwd",
+        tekst: "Het model achter Maes-AI komt van OpenAI. Wat de leerlingen van ICW gemaakt hebben, is alles eromheen: de site, de accounts, het krediet, de groepchats, en de code die met OpenAI praat. Dat onderscheid is het hele punt van de richting — je hoeft geen model te trainen om iets te bouwen dat werkt.",
+      },
+      {
+        kop: "Stap 1 — je bericht vertrekt naar de server",
+        tekst: "Je typt een vraag. De browser stuurt die naar onze eigen server, samen met je inlogtoken. Er gaat niets rechtstreeks van jouw browser naar OpenAI: de sleutel die daarvoor nodig is staat op de server en mag niemand zien.",
+      },
+      {
+        kop: "Stap 2 — de server plakt er een systeemprompt bij",
+        tekst: "Voor jouw vraag zet de server een stuk tekst dat het model vertelt wie het is: kort antwoorden, gewoon Nederlands, geen assistent-praat, respectvol blijven. Dat heet een systeemprompt. Ook je vorige berichten in dezelfde chat gaan mee, anders zou het model elke vraag als de eerste behandelen.",
+      },
+      {
+        kop: `Stap 3 — het gaat naar het model (${MODE_MODELS.regular})`,
+        tekst: "De server roept de API van OpenAI aan. Het model leest alles wat meegestuurd is en voorspelt woord voor woord een antwoord. Het weet niets van je school, je cijfers of je klas — het ziet alleen de tekst die wij meesturen.",
+      },
+      {
+        kop: "Stap 4 — betalen per stukje tekst",
+        tekst: "Een antwoord is niet gratis. Je betaalt per token, ongeveer een stuk van een woord, en apart voor wat erin gaat en wat eruit komt. Onze server rekent na elk antwoord uit wat het gekost heeft en trekt dat af van je krediet. Daarom zie je in de app een balkje in centen staan en geen aantal berichten.",
+      },
+      {
+        kop: "Stap 5 — grenzen die wij zelf gezet hebben",
+        tekst: "Elke student krijgt een vast bedrag. In de doekoeverzamelaar kan je krediet bijverdienen door opdrachten te maken. Als gast krijg je één voorbeeldvraag: genoeg om te zien hoe het voelt, te weinig om de rekening van de klas op te maken.",
+      },
+    ],
+    // waarom het niet zomaar één regel code is
+    randjes: [
+      "de sleutel van OpenAI staat alleen op de server, nooit in de browser",
+      "elke vraag wordt aan een account gekoppeld, zodat het krediet klopt",
+      "de kosten worden per antwoord berekend, niet geschat",
+      "wie door zijn krediet zit, krijgt een nette melding in plaats van een fout",
+    ],
+  });
+});
 /* ----------------------------- personas --------------------------- */
 
 app.get("/personas", requireAuth, async (req, res) => {
@@ -1399,13 +2243,19 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
       displayName: u.displayName || u.username,
       password: u.password,
       isAdmin: !!u.isAdmin,
+      role: ROLLEN.includes(u.role) ? u.role : "student",
+      claimed: !!u.claimed,
       pfp: data.pfp,
       spend: data.spend,
       pct: pctOf(data),
     };
   }));
+  // beheer bovenaan, dan de vaste studenten, dan de ICW-juniors, dan de gasten
+  const volgorde = { student: 1, icw: 2, gast: 3 };
   list.sort((a, b) => {
     if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+    const ra = volgorde[a.role] || 9, rb = volgorde[b.role] || 9;
+    if (ra !== rb) return ra - rb;
     const na = parseInt((a.username.match(/\d+$/) || [])[0] || "9999", 10);
     const nb = parseInt((b.username.match(/\d+$/) || [])[0] || "9999", 10);
     return na - nb || a.username.localeCompare(b.username);
@@ -1423,13 +2273,16 @@ async function renameUser(oud, nieuw) {
   await GroupMessage.updateMany({ username: oud }, { $set: { username: nieuw } });
   await StraatChat.updateMany({ username: oud }, { $set: { username: nieuw } });
   await FileDoc.updateMany({ uploader: oud }, { $set: { uploader: nieuw } });
+  // een goedgekeurde ICW-aanvraag wijst naar de plek; anders raakt de
+  // aanvrager zijn inloggegevens kwijt zodra de plek hernoemd wordt
+  await JuniorRequest.updateMany({ username: oud }, { $set: { username: nieuw } });
   await Group.updateMany({ owner: oud }, { $set: { owner: nieuw } });
   await Group.updateMany(
     { members: oud },
     { $set: { "members.$[m]": nieuw } },
     { arrayFilters: [{ m: oud }] }
   );
-  // tekeningen en teksten op de straat verwijzen ook naar de gebruikersnaam
+  // tekeningen en teksten in het lokaal verwijzen ook naar de gebruikersnaam
   await Straat.updateMany(
     { "items.u": oud },
     { $set: { "items.$[e].u": nieuw } },
@@ -1515,6 +2368,9 @@ app.delete("/admin/users/:username", requireAdmin, async (req, res) => {
   await UserData.deleteOne({ username });
   await UserAuth.deleteOne({ username });
   await Session.deleteMany({ username });
+  // een goedgekeurde ICW-aanvraag wijst naar dit account; laat geen
+  // aanvraag achter die naar inloggegevens verwijst die niet meer bestaan
+  await JuniorRequest.deleteMany({ username });
   Object.keys(tokens).forEach(t => { if (tokens[t] === username) delete tokens[t]; });
   await syncUsers();
   res.json({ success: true });
@@ -1541,6 +2397,128 @@ app.get("/admin/storage", requireAdmin, async (req, res) => {
 app.get("/admin/groups", requireAdmin, async (req, res) => {
   const list = await Group.find();
   res.json({ groups: list.map(g => ({ id: g.id, name: g.name, code: g.code, owner: g.owner, members: g.members })) });
+});
+
+/* ------------------ plekken en ICW-aanvragen (beheer) -------------- */
+
+app.get("/admin/spots", requireAdmin, async (req, res) => {
+  const s = await getSettings();
+  const gast = await UserAuth.find({ role: "gast" }).sort({ username: 1 });
+  const icw = await UserAuth.find({ role: "icw" }).sort({ username: 1 });
+  const kaart = u => ({
+    username: u.username, displayName: u.displayName, password: u.password,
+    claimed: !!u.claimed, claimedAt: u.claimedAt || null,
+  });
+  res.json({ gastOpen: !!s.gastOpen, gast: gast.map(kaart), icw: icw.map(kaart) });
+});
+
+app.post("/admin/spots", requireAdmin, async (req, res) => {
+  const rol = String(req.body.role || "");
+  if (!ROL_PREFIX[rol]) return res.status(400).json({ error: "kies gast of icw" });
+  try {
+    res.json({ success: true, spot: await maakPlek(rol) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// een plek weer vrijgeven: nieuwe naam, nieuw wachtwoord, sessies eruit
+app.post("/admin/spots/:username/free", requireAdmin, async (req, res) => {
+  const u = await UserAuth.findOne({ username: req.params.username });
+  if (!u || !ROL_PREFIX[u.role]) return res.status(404).json({ error: "dat is geen gast- of ICW-plek" });
+  const n = (String(u.username).match(/(\d+)$/) || [])[1] || "";
+  u.displayName = u.role === "gast" ? "gast " + n : "ICW junior " + n;
+  u.password = nieuwWachtwoord();
+  u.claimed = false;
+  u.claimedAt = null;
+  await u.save();
+  await Session.deleteMany({ username: u.username });
+  Object.keys(tokens).forEach(t => { if (tokens[t] === u.username) delete tokens[t]; });
+
+  /* Ook de gegevens leegmaken. De volgende die deze plek krijgt mag niet in
+     de chats van zijn voorganger zitten lezen — en moet zijn eigen
+     voorbeeldvraag aan Maes-AI nog hebben. */
+  await UserData.deleteOne({ username: u.username });
+
+  await syncUsers();
+  res.json({ success: true, username: u.username, password: u.password, displayName: u.displayName });
+});
+
+app.post("/admin/spots/gast-open", requireAdmin, async (req, res) => {
+  const s = await getSettings();
+  s.gastOpen = !!req.body.open;
+  s.updatedAt = Date.now();
+  await s.save();
+  res.json({ success: true, gastOpen: s.gastOpen });
+});
+
+app.get("/admin/junior-requests", requireAdmin, async (req, res) => {
+  const list = await JuniorRequest.find().sort({ createdAt: -1 }).limit(200);
+  const requests = await Promise.all(list.map(async r => {
+    const plek = await plekVanAanvraag(r);
+    return {
+      id: r.id, smartschool: r.smartschool, bericht: r.bericht,
+      // een goedgekeurde aanvraag zonder account meer is "ingetrokken"
+      status: r.status === "goedgekeurd" && !plek ? "ingetrokken" : r.status,
+      username: plek ? plek.username : null,
+      password: plek ? plek.password : null,
+      reden: r.reden,
+      createdAt: r.createdAt, handledAt: r.handledAt, handledBy: r.handledBy,
+    };
+  }));
+  res.json({ requests, open: requests.filter(r => r.status === "open").length });
+});
+
+/* Goedkeuren wijst een vrije ICW-plek toe. Is er geen vrije, dan maken we
+   er eentje bij: de beheerder heeft al ja gezegd, dan moet hij niet eerst
+   nog ergens anders op een knop gaan zoeken. */
+app.post("/admin/junior-requests/:id/approve", requireAdmin, async (req, res) => {
+  try {
+    const r = await JuniorRequest.findOne({ id: req.params.id });
+    if (!r) return res.status(404).json({ error: "aanvraag niet gevonden" });
+    if (r.status === "goedgekeurd") {
+      return res.json({ success: true, alGedaan: true, username: r.username, password: r.password });
+    }
+
+    let plek = await vrijePlek("icw");
+    if (!plek) {
+      const nieuw = await maakPlek("icw");
+      plek = await UserAuth.findOne({ username: nieuw.username });
+    }
+    plek.displayName = r.smartschool;
+    plek.claimed = true;
+    plek.claimedAt = Date.now();
+    await plek.save();
+    await syncUsers();
+
+    r.status = "goedgekeurd";
+    r.username = plek.username;
+    r.password = plek.password;
+    r.handledAt = Date.now();
+    r.handledBy = req.username;
+    await r.save();
+
+    res.json({ success: true, username: plek.username, password: plek.password });
+  } catch (e) {
+    console.error("aanvraag goedkeuren:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/admin/junior-requests/:id/deny", requireAdmin, async (req, res) => {
+  const r = await JuniorRequest.findOne({ id: req.params.id });
+  if (!r) return res.status(404).json({ error: "aanvraag niet gevonden" });
+  r.status = "geweigerd";
+  r.reden = String(req.body.reden || "").slice(0, 200);
+  r.handledAt = Date.now();
+  r.handledBy = req.username;
+  await r.save();
+  res.json({ success: true });
+});
+
+app.delete("/admin/junior-requests/:id", requireAdmin, async (req, res) => {
+  await JuniorRequest.deleteOne({ id: req.params.id });
+  res.json({ success: true });
 });
 
 /* --------------------------- foutafhandeling ---------------------- */
@@ -1570,45 +2548,125 @@ io.use((socket, next) => {
   next();
 });
 
-const straatPresence = new Map();   // username -> { name, activity, at }
+/* ---- wie is er nu op welk bord ---- */
+/* Per bord een eigen lijst, anders ziet het lokaal de gasten meetekenen
+   en omgekeerd. Sleutel is bord-id, waarde is username -> wat hij doet. */
+const presence = new Map(Object.keys(BORDEN).map(id => [id, new Map()]));
 
-function broadcastPresence() {
+function broadcastPresence(bordId) {
+  const bord = bordVan(bordId);
+  if (!bord) return;
+  const lijst = presence.get(bordId);
   const now = Date.now();
-  for (const [u, p] of straatPresence) if (now - p.at > 9000) straatPresence.delete(u);
-  io.to("straat").emit("straat:presence", [...straatPresence.entries()].map(([u, p]) => ({
-    username: u, displayName: p.name, activity: p.activity,
-  })));
+  for (const [u, p] of lijst) if (now - p.at > 9000) lijst.delete(u);
+  io.to(bord.room).emit("bord:presence", {
+    bord: bordId,
+    lijst: [...lijst.entries()].map(([u, p]) => ({
+      username: u, displayName: p.name, activity: p.activity,
+    })),
+  });
 }
-setInterval(broadcastPresence, 4000);
+setInterval(() => Object.keys(BORDEN).forEach(broadcastPresence), 4000);
 
-async function pushStraatItem(socket, item) {
+/* Eén ding tegelijk. Wie net iets geplaatst heeft moet 30 seconden wachten
+   voor het volgende. De beheerder valt erbuiten. De teller staat hier en
+   niet in de browser, want anders is hij met één regel in de console weg.
+
+   De teller loopt per bord: wie op het gastbord tekent, staat daarmee niet
+   ook in het lokaal stil. */
+const laatsteInput = new Map();   // "username|bord" -> tijdstip van de laatste lijn/tekst
+
+function cooldownOver(username, bordId) {
+  if (ADMINS.has(username)) return 0;
+  const laatste = laatsteInput.get(username + "|" + bordId) || 0;
+  return Math.max(0, LOKAAL_COOLDOWN_MS - (Date.now() - laatste));
+}
+
+// plaatst een lijn of tekst op een bord; geeft false als het geweigerd is
+async function pushBordItem(socket, bordId, item) {
+  const bord = bordVan(bordId);
+  if (!bord) return false;
+
+  const mag = bordRechten(socket.username, bordId);
+  if (!mag.schrijven) {
+    socket.emit("bord:geweigerd", {
+      bord: bordId,
+      reden: bordId === "lokaal"
+        ? "als gast kan je het lokaal bekijken, niet erin schrijven"
+        : "je mag hier niet schrijven",
+    });
+    return false;
+  }
+
+  const wacht = cooldownOver(socket.username, bordId);
+  if (wacht > 0) {
+    socket.emit("bord:cooldown", { bord: bordId, over: wacht, geweigerd: true });
+    return false;
+  }
+
   const date = todayKey();
   item.id = rid(8);
   item.u = socket.username;
   item.n = socket.displayName;
   item.ts = Date.now();
-  await Straat.updateOne(
+  await bord.model.updateOne(
     { date },
     { $push: { items: item }, $addToSet: { contributors: socket.displayName }, $set: { updatedAt: Date.now() } },
     { upsert: true }
   );
-  io.to("straat").emit("straat:item", item);
+  if (!ADMINS.has(socket.username)) {
+    laatsteInput.set(socket.username + "|" + bordId, Date.now());
+    socket.emit("bord:cooldown", { bord: bordId, over: LOKAAL_COOLDOWN_MS, geweigerd: false });
+  }
+  io.to(bord.room).emit("bord:item", { bord: bordId, item });
+  return true;
 }
 
 io.on("connection", (socket) => {
 
-  /* ---- de straat ---- */
-  socket.on("straat:join", async () => {
-    socket.join("straat");
-    const doc = await getStraat(todayKey());
-    socket.emit("straat:state", { date: doc.date, items: doc.items, contributors: doc.contributors, bgPreset: doc.bgPreset, bgFileId: doc.bgFileId });
-    broadcastPresence();
+  /* ---- de borden: het lokaal en het gastbord ---- */
+
+  // welke borden deze socket op dit moment open heeft staan
+  socket.borden = new Set();
+
+  socket.on("bord:join", async (payload) => {
+    const bordId = (payload && payload.bord) || "lokaal";
+    const bord = bordVan(bordId);
+    if (!bord) return;
+    const mag = bordRechten(socket.username, bordId);
+    if (!mag.lezen) return;
+
+    socket.join(bord.room);
+    socket.borden.add(bordId);
+    const doc = await getBord(bordId, todayKey());
+    socket.emit("bord:state", {
+      bord: bordId,
+      date: doc.date, items: doc.items, contributors: doc.contributors,
+      bgPreset: doc.bgPreset, bgFileId: doc.bgFileId,
+      schrijven: mag.schrijven,
+      // zodat de teller na een refresh gewoon verder loopt
+      cooldown: cooldownOver(socket.username, bordId),
+      cooldownMs: ADMINS.has(socket.username) ? 0 : LOKAAL_COOLDOWN_MS,
+    });
+    broadcastPresence(bordId);
   });
 
-  socket.on("straat:stroke", async (stroke) => {
-    if (!stroke || !Array.isArray(stroke.pts) || stroke.pts.length < 1) return;
+  socket.on("bord:leave", (payload) => {
+    const bordId = (payload && payload.bord) || "lokaal";
+    const bord = bordVan(bordId);
+    if (!bord) return;
+    socket.leave(bord.room);
+    socket.borden.delete(bordId);
+    const lijst = presence.get(bordId);
+    if (lijst) lijst.delete(socket.username);
+    broadcastPresence(bordId);
+  });
+
+  socket.on("bord:stroke", async (payload) => {
+    const stroke = payload || {};
+    if (!Array.isArray(stroke.pts) || stroke.pts.length < 1) return;
     const pts = stroke.pts.slice(0, 4000).map(p => [Math.round(p[0]), Math.round(p[1])]);
-    await pushStraatItem(socket, {
+    await pushBordItem(socket, stroke.bord, {
       t: "s",
       pts,
       c: String(stroke.c || "#37352f").slice(0, 24),
@@ -1616,10 +2674,10 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("straat:text", async (t) => {
+  socket.on("bord:text", async (t) => {
     const text = String((t && t.text) || "").trim();
     if (!text) return;
-    await pushStraatItem(socket, {
+    await pushBordItem(socket, t.bord, {
       t: "x",
       text: text.slice(0, 240),
       x: Math.round(Number(t.x) || 0),
@@ -1629,41 +2687,62 @@ io.on("connection", (socket) => {
     });
   });
 
-  // publieke chat op de straat
-  socket.on("straat:chat", async (text) => {
-    const body = String(text || "").trim();
+  // de publieke chat die bij een bord hoort
+  socket.on("bord:chat", async (payload) => {
+    const bordId = (payload && payload.bord) || "lokaal";
+    const bord = bordVan(bordId);
+    if (!bord) return;
+    const mag = bordRechten(socket.username, bordId);
+    if (!mag.schrijven) {
+      socket.emit("bord:geweigerd", {
+        bord: bordId,
+        reden: bordId === "lokaal"
+          ? "als gast lees je de chat van het lokaal, schrijven doe je op het gastbord"
+          : "je mag hier niet schrijven",
+      });
+      return;
+    }
+
+    const body = String((payload && payload.text) || "").trim();
     if (!body) return;
-    const msg = await StraatChat.create({
+    const msg = await bord.chat.create({
       id: rid(10),
       username: socket.username,
       displayName: socket.displayName,
       text: body.slice(0, 1000),
       time: Date.now(),
     });
-    io.to("straat").emit("straat:chat", msg);
+    io.to(bord.room).emit("bord:chat", { bord: bordId, msg });
 
     // alleen de laatste STRAAT_CHAT_KEEP berichten bewaren
-    const count = await StraatChat.countDocuments();
+    const count = await bord.chat.countDocuments();
     if (count > STRAAT_CHAT_KEEP) {
-      const oud = await StraatChat.find().sort({ time: 1 }).limit(count - STRAAT_CHAT_KEEP);
-      await StraatChat.deleteMany({ _id: { $in: oud.map(o => o._id) } });
+      const oud = await bord.chat.find().sort({ time: 1 }).limit(count - STRAAT_CHAT_KEEP);
+      await bord.chat.deleteMany({ _id: { $in: oud.map(o => o._id) } });
     }
   });
 
-  socket.on("straat:chat-typing", (on) => {
-    socket.to("straat").emit("straat:chat-typing", {
-      username: socket.username, displayName: socket.displayName, on: !!on,
+  socket.on("bord:chat-typing", (payload) => {
+    const bordId = (payload && payload.bord) || "lokaal";
+    const bord = bordVan(bordId);
+    if (!bord || !bordRechten(socket.username, bordId).schrijven) return;
+    socket.to(bord.room).emit("bord:chat-typing", {
+      bord: bordId, username: socket.username, displayName: socket.displayName, on: !!(payload && payload.on),
     });
   });
 
-  // live "aan het typen / aan het tekenen" op de straat
-  socket.on("straat:activity", (activity) => {
-    straatPresence.set(socket.username, {
+  // live "aan het typen / aan het tekenen"
+  socket.on("bord:activity", (payload) => {
+    const bordId = (payload && payload.bord) || "lokaal";
+    const lijst = presence.get(bordId);
+    if (!lijst || !bordRechten(socket.username, bordId).lezen) return;
+    const activity = payload && payload.activity;
+    lijst.set(socket.username, {
       name: socket.displayName,
       activity: activity === "typing" ? "typing" : activity === "drawing" ? "drawing" : "idle",
       at: Date.now(),
     });
-    broadcastPresence();
+    broadcastPresence(bordId);
   });
 
   /* ---- groepen ---- */
@@ -1750,11 +2829,14 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    straatPresence.delete(socket.username);
-    broadcastPresence();
+    for (const bordId of socket.borden || []) {
+      const lijst = presence.get(bordId);
+      if (lijst) lijst.delete(socket.username);
+      broadcastPresence(bordId);
+    }
   });
 });
 
 const HOST = process.env.RENDER ? "0.0.0.0" : "127.0.0.1";
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, HOST, () => console.log(`drerries-ai running on ${HOST}:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`lokaal b16 running on ${HOST}:${PORT}`));

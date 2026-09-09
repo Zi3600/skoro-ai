@@ -34,20 +34,37 @@ function leesCss(css) {
   return regels;
 }
 
-// heeft een selector (of een klasse-selector) deze eigenschap gezet?
+/* Heeft een selector deze eigenschap gezet?
+
+   selector      -> exact deze selector, bv. "h1"
+   selectorSoort -> "klasse" (elke .x), "id" (elke #x), "alles" (waar dan ook)
+   selectorBevat -> de selector moet dit stukje bevatten, bv. ":hover"
+   waarde        -> de waarde moet dit bevatten; display:flex is iets anders
+                    dan display:grid, dus alleen kijken of de eigenschap er
+                    staat is voor die levels niet genoeg. */
 function cssHeeft(regels, eis) {
   const namen = [eis.eigenschap, ...(eis.losOok || [])].map(n => n.toLowerCase());
   // ook shorthand accepteren: padding dekt padding-top enz.
   const past = (prop) => namen.some(n => prop === n || prop.startsWith(n + "-"));
+  const wil = eis.waarde ? String(eis.waarde).toLowerCase() : null;
 
   for (const regel of regels) {
-    const selectorPast = eis.selectorSoort === "klasse"
-      ? regel.selectors.some(s => s.includes("."))
-      : eis.selectorSoort === "id"
-        ? regel.selectors.some(s => s.includes("#"))
-        : regel.selectors.some(s => s === String(eis.selector || "").toLowerCase());
+    const selectorPast =
+      eis.selectorBevat
+        ? regel.selectors.some(s => s.includes(String(eis.selectorBevat).toLowerCase()))
+        : eis.selectorSoort === "klasse"
+          ? regel.selectors.some(s => s.includes("."))
+          : eis.selectorSoort === "id"
+            ? regel.selectors.some(s => s.includes("#"))
+            : eis.selectorSoort === "alles"
+              ? true
+              : regel.selectors.some(s => s === String(eis.selector || "").toLowerCase());
     if (!selectorPast) continue;
-    if (Object.keys(regel.props).some(past)) return true;
+
+    const gezet = Object.keys(regel.props).filter(past);
+    if (!gezet.length) continue;
+    if (!wil) return true;
+    if (gezet.some(prop => String(regel.props[prop]).toLowerCase().includes(wil))) return true;
   }
   return false;
 }
@@ -73,6 +90,15 @@ function controleer(eisen, html, css) {
     let ok = false;
     try {
       switch (eis.soort) {
+        /* Een echte CSS-selector op de HTML. Nodig zodra twee dingen op
+           HETZELFDE element moeten kloppen: een <input> met type="checkbox"
+           is iets anders dan een input plus ergens een checkbox. */
+        case "selector": {
+          let els = wortel.querySelectorAll(eis.selector);
+          if (eis.nietLeeg) els = els.filter(el => el.text.trim().length > 0);
+          ok = els.length >= (eis.minAantal || 1);
+          break;
+        }
         case "tag": {
           let els = wortel.querySelectorAll(eis.tag);
           if (eis.nietLeeg) els = els.filter(el => el.text.trim().length > 0);
@@ -102,6 +128,7 @@ function controleer(eisen, html, css) {
             if (v === undefined || v === null) return false;
             if (eis.nietLeeg && !String(v).trim()) return false;
             if (eis.waarde && String(v).trim().toLowerCase() !== String(eis.waarde).toLowerCase()) return false;
+            if (eis.bevat && !String(v).toLowerCase().includes(String(eis.bevat).toLowerCase())) return false;
             return true;
           });
           break;
@@ -117,6 +144,14 @@ function controleer(eisen, html, css) {
         }
         case "css": {
           ok = cssHeeft(cssRegels, eis);
+          break;
+        }
+        /* Zoekt letterlijk in de CSS-tekst. Onze mini-lezer hierboven leest
+           blok voor blok en ziet dus geen @media of @keyframes staan: die
+           hebben blokken in blokken. Voor die levels kijken we in de ruwe
+           tekst, net als ruweTelling bij HTML. */
+        case "cssRuw": {
+          ok = c.toLowerCase().replace(/s+/g, " ").includes(String(eis.patroon).toLowerCase());
           break;
         }
         case "geen": {

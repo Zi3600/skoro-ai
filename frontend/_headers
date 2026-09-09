@@ -1,0 +1,31 @@
+# Cloudflare Pages leest dit bestand. Zie CLOUDFLARE.md.
+# Render doet er niets mee, dus het kan gerust blijven staan.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+
+# de pagina's zelf nooit lang cachen: anders zie je na een push nog de oude
+/*.html
+  Cache-Control: no-cache
+
+/app.js
+  Cache-Control: no-cache
+
+/app.css
+  Cache-Control: no-cache
+
+# hier staat de backend-URL in, die moet meteen kloppen na een verhuis
+/config.js
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+# iconen en afbeeldingen veranderen zelden
+/icons/*
+  Cache-Control: public, max-age=604800
+
+/*.png
+  Cache-Control: public, max-age=604800

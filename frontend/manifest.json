@@ -1,7 +1,7 @@
 {
-  "name": "drerries-ai",
-  "short_name": "drerries",
-  "description": "de straat, je groepen en Maes-AI",
+  "name": "lokaal b16",
+  "short_name": "lokaal b16",
+  "description": "het lokaal, je groepen en Maes-AI",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

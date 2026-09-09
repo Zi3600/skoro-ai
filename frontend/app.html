@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>drerries-ai</title>
+  <title>lokaal b16</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#1a8fd4" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="drerries" />
+  <meta name="apple-mobile-web-app-title" content="lokaal b16" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="stylesheet" href="app.css" />
@@ -25,36 +25,48 @@
       <div class="sb-avatar" id="me-av">?</div>
       <div class="sb-who">
         <strong id="me-name">...</strong>
-        <span id="me-sub">drerries-ai</span>
+        <span id="me-sub">lokaal b16</span>
       </div>
     </div>
 
     <div class="sb-scroll">
       <div class="sb-label">school</div>
-      <button class="sb-item" data-route="straat" onclick="go('#/straat')">
-        <span class="ico" data-icon="straat">🛣️</span><span class="txt">straat</span><span class="pill" id="straat-live" hidden>live</span>
+      <button class="sb-item" data-route="straat" data-bord="lokaal" onclick="go('#/lokaal')">
+        <span class="ico" data-icon="lokaal">🚪</span><span class="txt">lokaal</span><span class="pill" id="straat-live" hidden>live</span>
+      </button>
+      <button class="sb-item" data-route="straat" data-bord="gast" id="sb-gastbord" hidden onclick="go('#/gastbord')">
+        <span class="ico" data-icon="gastbord">🎨</span><span class="txt">gastbord</span>
       </button>
       <button class="sb-item" data-route="archief" onclick="go('#/archief')">
         <span class="ico" data-icon="archief">🗂️</span><span class="txt">archief</span>
       </button>
+      <button class="sb-item" data-route="icw" onclick="go('#/icw')">
+        <span class="ico" data-icon="icw">📘</span><span class="txt">over ICW</span>
+      </button>
 
-      <div class="sb-label">groepen</div>
+      <div class="sb-label" id="sb-groepen-label">groepen</div>
       <div id="sb-groups"></div>
-      <button class="sb-item" onclick="go('#/groepen')">
+      <button class="sb-item" id="sb-groepen-nieuw" onclick="go('#/groepen')">
         <span class="ico" data-icon="nieuwe-groep">＋</span><span class="txt">maak je groep</span>
       </button>
 
       <div class="sb-label">ai</div>
-      <button class="sb-item" data-route="maes" onclick="go('#/maes')">
-        <span class="ico" data-icon="maes">✦</span><span class="txt">Maes-AI</span>
+      <button class="sb-item" data-route="maes" id="sb-maes" onclick="go('#/maes')">
+        <span class="ico maes-bril" data-icon="maes"></span><span class="txt">Maes-AI</span>
       </button>
-      <button class="sb-item" data-route="heist" onclick="go('#/heist')">
-        <span class="ico" data-icon="heist">🗝</span><span class="txt">Code Heist</span><span class="pill" id="heist-pill" hidden>1c</span>
+      <button class="sb-item" data-route="maesuitleg" id="sb-maes-uitleg" hidden onclick="go('#/maes-uitleg')">
+        <span class="ico maes-bril" data-icon="maes"></span><span class="txt">wat is Maes-AI?</span>
+      </button>
+      <button class="sb-item" data-route="heist" id="sb-doekoe" onclick="go('#/doekoe')">
+        <span class="ico" data-icon="doekoe">💰</span><span class="txt">doekoeverzamelaar</span><span class="pill" id="heist-pill" hidden>1c</span>
       </button>
 
       <div class="sb-label">meer</div>
       <button class="sb-item" data-route="instellingen" onclick="go('#/instellingen')">
         <span class="ico" data-icon="instellingen">⚙</span><span class="txt">instellingen</span>
+      </button>
+      <button class="sb-item" data-route="maasai" id="sb-maasai" onclick="go('#/maasai')">
+        <span class="ico" data-icon="maasai">🌊</span><span class="txt">MaasAI</span>
       </button>
       <button class="sb-item" data-route="beheer" id="sb-beheer" hidden onclick="go('#/beheer')">
         <span class="ico" data-icon="beheer">🛠</span><span class="txt">beheer</span>
@@ -67,7 +79,7 @@
     <div class="sb-foot">
       <div class="credit">
         <div class="credit-top">
-          <span>Maes-AI krediet</span>
+          <span id="credit-titel">Maes-AI krediet</span>
           <b id="credit-label">–</b>
         </div>
         <div class="credit-track"><div class="credit-bar" id="credit-bar"></div></div>
@@ -84,15 +96,23 @@
       <div id="topbar-actions"></div>
     </div>
 
-    <!-- ---------------------------- de straat ---------------------------- -->
+    <!-- ---------------------------- het lokaal ---------------------------- -->
     <section class="view" id="v-straat" hidden>
       <div class="page">
         <div class="straat-head">
           <div>
-            <h1 class="title">straat</h1>
-            <p class="lead" id="straat-sub">het whiteboard van vandaag. iedereen tekent en typt hier live mee. morgen begint een nieuwe en gaat deze naar het archief.</p>
+            <h1 class="title" id="straat-titel">lokaal</h1>
+            <p class="lead" id="straat-sub">het bord van vandaag. iedereen tekent en typt hier live mee. morgen begint een nieuw bord en gaat dit naar het archief.</p>
           </div>
           <div class="presence" id="presence"></div>
+        </div>
+
+        <!-- staat er alleen als je dit bord mag bekijken maar niet beschrijven -->
+        <div class="kijkbalk" id="bord-kijk" hidden>
+          <span class="ico" data-icon="kijken">👀</span>
+          <span id="bord-kijk-txt"></span>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn sm" onclick="go('#/gastbord')">naar het gastbord</button>
         </div>
 
         <div class="toolbar" id="straat-toolbar">
@@ -104,7 +124,12 @@
           <span class="sizes" id="sizes"></span>
           <span class="div"></span>
           <button class="tool" onclick="undoMine()" title="maak je laatste toevoeging ongedaan"><span class="ico" data-icon="ongedaan">↶</span> ongedaan</button>
+          <!-- alleen voor de beheerder -->
+          <button class="tool" id="mod-tool" hidden onclick="toggleModeratie()" title="zie wie wat gezet heeft en haal er iets af"><span class="ico" data-icon="moderatie">🔍</span> wie wat</button>
           <button class="tool" id="clear-tool" hidden onclick="clearStraat()"><span class="ico" data-icon="leegmaken">🗑</span> leegmaken</button>
+          <span class="spacer" style="flex:1"></span>
+          <!-- één ding tegelijk, dan 30 seconden wachten -->
+          <span class="cooldown" id="cooldown" hidden><span class="cd-ring"></span><span id="cooldown-txt"></span></span>
         </div>
 
         <div class="straat-layout">
@@ -115,25 +140,42 @@
                 <input id="text-input" placeholder="typ en druk enter" />
                 <div class="hint">enter = plaatsen · esc = annuleren</div>
               </div>
+              <!-- moderatie: naamlabels bij elk ding op het bord -->
+              <div id="mod-laag" hidden></div>
+              <div id="mod-pop" hidden></div>
             </div>
 
             <div class="straat-foot">
               <span id="straat-count">–</span>
               <span id="straat-contribs"></span>
             </div>
+
+            <!-- wie zit er vandaag op het bord — alleen beheerder -->
+            <div class="mod-paneel" id="mod-paneel" hidden>
+              <div class="mp-kop">
+                <strong>wie heeft wat gezet</strong>
+                <span class="tag" id="mod-tel"></span>
+                <span class="spacer" style="flex:1"></span>
+                <button class="btn ghost sm" onclick="laadModeratie()">vernieuwen</button>
+              </div>
+              <div class="mp-lijst" id="mod-personen"></div>
+              <p class="mp-hint">klik op iets op het bord om te zien van wie het is en het weg te halen.</p>
+            </div>
           </div>
 
-          <!-- publieke chat van de straat -->
+          <!-- publieke chat van het lokaal -->
           <aside class="straat-chat" id="straat-chat">
             <div class="sc-head">
               <span class="ico" data-icon="chat">💬</span>
               <strong>publieke chat</strong>
               <span class="tag" id="sc-count"></span>
+              <button class="btn ghost sm" id="sc-clear" hidden onclick="clearLokaalChat()" title="alle berichten weghalen">leeg</button>
             </div>
             <div class="sc-scroll" id="sc-messages"></div>
             <div class="sc-typing" id="sc-typing"></div>
-            <div class="sc-composer">
-              <textarea id="sc-input" rows="1" placeholder="zeg iets tegen iedereen op straat..."></textarea>
+            <div class="sc-lezen" id="sc-lezen" hidden></div>
+            <div class="sc-composer" id="sc-composer">
+              <textarea id="sc-input" rows="1" placeholder="zeg iets tegen iedereen in het lokaal..."></textarea>
               <button class="btn primary sm" onclick="sendStraatChat()">stuur</button>
             </div>
           </aside>
@@ -145,7 +187,7 @@
     <section class="view" id="v-archief" hidden>
       <div class="page">
         <h1 class="title">archief</h1>
-        <p class="lead">elke dag op straat wordt hier bewaard.</p>
+        <p class="lead">elke dag in het lokaal wordt hier bewaard.</p>
         <div class="arch-grid" id="arch-grid"></div>
         <div class="empty" id="arch-empty" hidden><span class="big" data-icon="archief">🗂️</span>nog niks in het archief</div>
       </div>
@@ -242,13 +284,119 @@
       <input type="file" id="maes-image" accept="image/*" hidden />
     </section>
 
-    <!-- ---------------------------- Code Heist ---------------------------- -->
+    <!-- ------------------------------ over ICW ---------------------------- -->
+    <section class="view" id="v-icw" hidden>
+      <div class="page">
+        <div class="icw-kop">
+          <h1 class="title" id="icw-titel">over ICW</h1>
+          <p class="lead" id="icw-onderschrift"></p>
+          <div class="icw-inhoud" id="icw-inhoud"></div>
+        </div>
+
+        <!-- het artikel, als forumdraad -->
+        <div class="forum" id="icw-draad"></div>
+
+        <!-- de quiz -->
+        <div class="quiz" id="quiz">
+          <div class="quiz-balk"><div class="quiz-voortgang" id="quiz-voortgang"></div></div>
+
+          <div class="quiz-body">
+            <h2 class="quiz-titel" id="quiz-titel">Doe de ICW-quiz</h2>
+            <p class="lead" id="quiz-intro"></p>
+
+            <!-- startscherm -->
+            <div id="quiz-start">
+              <button class="btn primary" onclick="startQuiz()">start de quiz</button>
+            </div>
+
+            <!-- één vraag tegelijk -->
+            <div id="quiz-spel" hidden>
+              <div class="quiz-teller" id="quiz-teller"></div>
+              <h3 class="quiz-vraag" id="quiz-vraag"></h3>
+              <div id="quiz-opties"></div>
+              <div class="quiz-weetje" id="quiz-weetje" hidden></div>
+              <button class="btn primary" id="quiz-verder" hidden onclick="volgendeVraag()">volgende vraag</button>
+            </div>
+
+            <!-- uitslag -->
+            <div id="quiz-uitslag" hidden>
+              <div class="quiz-eerder" id="quiz-eerder" hidden>dit was je uitslag van de vorige keer</div>
+              <div class="quiz-score">
+                <b id="quiz-score">–</b>
+                <div class="credit-track"><div class="credit-bar" id="quiz-meter"></div></div>
+              </div>
+              <h3 class="quiz-vraag" id="quiz-uitslag-titel"></h3>
+              <p class="lead" id="quiz-uitslag-tekst"></p>
+              <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:14px;">
+                <button class="btn" onclick="startQuiz()">opnieuw doen</button>
+                <button class="btn ghost" onclick="springNaar('wat-is-icw')">nog eens lezen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- -------------------------- wat is Maes-AI -------------------------- -->
+    <section class="view" id="v-maesuitleg" hidden>
+      <div class="page">
+        <div class="mu-kop">
+          <span class="mu-bril maes-bril"></span>
+          <div>
+            <h1 class="title">wat is Maes-AI?</h1>
+            <p class="lead">Maes-AI is de assistent van deze site. Hieronder staat wat er gebeurt tussen jouw vraag
+              en het antwoord — en waarom dat geen magie is, maar werk van de klas.</p>
+          </div>
+        </div>
+
+        <!-- zelf uitproberen -->
+        <div class="card mu-proef">
+          <div class="mu-proef-kop">
+            <strong>probeer het zelf</strong>
+            <span class="tag" id="mu-over">–</span>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);">
+            Als gast krijg je één vraag, zodat je ziet hoe het voelt. Wat je typt gaat naar
+            <code id="mu-model">het model</code> en komt als tekst terug.
+          </p>
+
+          <div class="mu-composer">
+            <textarea id="mu-input" rows="2" placeholder="stel Maes-AI je vraag..."></textarea>
+            <button class="btn primary" id="mu-stuur" onclick="stuurMaesProef()">stuur</button>
+          </div>
+          <p class="mu-op" id="mu-op" hidden>
+            je voorbeeldvraag is gebruikt. wil je verder met Maes-AI? vraag een junior ICW-plek aan op het inlogscherm.
+          </p>
+
+          <div class="mu-gesprek" id="mu-gesprek" hidden>
+            <div class="msg mine">
+              <div class="av" id="mu-jij-av">?</div>
+              <div class="bd"><div class="who">jij</div><div class="tx" id="mu-jij"></div></div>
+            </div>
+            <div class="msg ai">
+              <div class="av maes-bril" style="background:var(--purple)"></div>
+              <div class="bd"><div class="who">Maes-AI</div><div class="tx" id="mu-antwoord"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <h2 class="sect">hoe het werkt</h2>
+        <div class="mu-stappen" id="mu-stappen"></div>
+
+        <h2 class="sect">waar we op gelet hebben</h2>
+        <div class="card">
+          <ul class="fp-lijst" id="mu-randjes"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ------------------------ doekoeverzamelaar ------------------------ -->
     <section class="view" id="v-heist" hidden>
       <div class="page">
         <div class="straat-head">
           <div>
-            <h1 class="title">Code Heist</h1>
-            <p class="lead">leer HTML en CSS door levels te kraken. haal de heist van vandaag en verdien krediet voor Maes-AI.</p>
+            <h1 class="title">doekoeverzamelaar</h1>
+            <p class="lead">leer HTML en CSS door levels te kraken. verzamel de doekoe van vandaag en verdien krediet voor Maes-AI.</p>
           </div>
           <div class="presence">
             <span class="pchip" id="heist-streak"></span>
@@ -266,13 +414,13 @@
           <button class="btn" onclick="openSpiek()">openen</button>
         </div>
 
-        <!-- de dagelijkse heist -->
+        <!-- de doekoe van vandaag -->
         <div class="card heist-daily" id="daily-card">
           <div class="hd-top">
             <span class="tag blue" id="daily-type">vandaag</span>
             <strong id="daily-vraag">–</strong>
             <span class="spacer"></span>
-            <span class="tag green" id="daily-status" hidden>gehaald</span>
+            <span class="tag green" id="daily-status" hidden>binnen</span>
           </div>
           <p class="hd-uitleg" id="daily-uitleg"></p>
           <pre class="hd-code" id="daily-code" hidden></pre>
@@ -282,7 +430,7 @@
         </div>
 
         <h2 class="sect">levels</h2>
-        <div class="lvl-grid" id="lvl-grid"></div>
+        <div id="lvl-boek"></div>
 
         <!-- werkplek: hier schrijf je de code -->
         <div id="heist-werk" hidden>
@@ -294,6 +442,7 @@
             <button class="btn ghost sm" onclick="sluitWerk()">sluiten</button>
           </div>
           <p class="lead" id="werk-uitleg"></p>
+          <div class="werk-les" id="werk-les" hidden></div>
 
           <div class="werk-grid">
             <div class="werk-code">
@@ -349,8 +498,51 @@
           </div>
           <div class="credit-track" style="margin-top:9px;"><div class="credit-bar" id="settings-bar"></div></div>
           <p style="font-size:13px;color:var(--text-muted);margin-top:10px;">
-            elke student krijgt 25 cent aan Maes-AI. is je krediet op, dan zet de beheerder het terug op nul.
+            elk account krijgt 25 cent aan Maes-AI. is je krediet op, dan zet de beheerder het terug op nul.
           </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ----------------------------- downloads ---------------------------- -->
+    <section class="view" id="v-maasai" hidden>
+      <div class="page">
+        <h1 class="title">MaasAI</h1>
+        <p class="lead">overstromingsdetectie en -voorspelling: een programma voor Windows dat je gewoon kunt doorgeven. het draait volledig op je eigen computer, ook zonder internet.</p>
+
+        <div class="card" id="dl-maasai-kaart">
+          <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+            <div style="font-size:34px;line-height:1;">🌊</div>
+            <div style="flex:1;min-width:180px;">
+              <div style="font-weight:600;" id="dl-maasai-titel">MaasAI voor Windows</div>
+              <div style="font-size:13px;color:var(--text-muted);" id="dl-maasai-meta">laden…</div>
+            </div>
+            <button class="btn primary" id="dl-maasai-knop" onclick="haalDownload('maasai')" hidden>downloaden</button>
+          </div>
+          <p style="font-size:13px;color:var(--text-muted);margin-top:12px;" id="dl-maasai-uitleg" hidden>
+            dubbelklik <b>MaasAI.exe</b> na het downloaden; er opent een venster met het dashboard.
+            windows kan waarschuwen omdat het programma niet ondertekend is — klik dan
+            "meer informatie" en "toch uitvoeren". een handtekening kost geld en dit is een schoolproject.
+          </p>
+        </div>
+
+        <!-- alleen de beheerder zet hier een nieuwe build neer -->
+        <div id="dl-beheer" hidden>
+          <h2 class="sect">nieuwe versie neerzetten</h2>
+          <div class="card">
+            <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">
+              kies de <b>MaasAI.exe</b> uit <code>dist\</code>. de vorige versie wordt vervangen en meteen
+              uit de opslag gegooid, zodat er nooit twee builds tegelijk staan.
+            </p>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <button class="btn" onclick="document.getElementById('dl-input').click()">bestand kiezen</button>
+              <input type="file" id="dl-input" accept=".exe" hidden onchange="zetDownloadNeer(this)" />
+              <span style="font-size:13px;color:var(--text-muted);" id="dl-status"></span>
+            </div>
+            <div class="credit-track" style="margin-top:12px;" id="dl-balk-wrap" hidden>
+              <div class="credit-bar" id="dl-balk" style="width:0%"></div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -369,10 +561,51 @@
         <table class="tbl">
           <thead>
             <tr><th style="width:140px;">gebruikersnaam</th><th>naam</th><th style="width:150px;">wachtwoord</th>
+                <th style="width:90px;">soort</th>
                 <th style="width:150px;">krediet</th><th style="width:80px;"></th></tr>
           </thead>
           <tbody id="admin-rows"></tbody>
         </table>
+
+        <!-- ------------------- gast- en ICW-plekken ------------------- -->
+        <h2 class="sect">gastplekken en junior ICW</h2>
+        <p class="lead">naast de vaste twintig kan je plekken openzetten. een gast neemt er zelf eentje als je dat toelaat; een junior ICW-student vraagt er een aan met zijn Smartschool-naam en die aanvraag komt hieronder binnen.</p>
+
+        <div class="card" style="margin-top:12px;">
+          <div class="plek-kop">
+            <div>
+              <div style="font-weight:500;">gasten mogen zelf binnen</div>
+              <div style="font-size:13px;color:var(--text-muted);" id="gast-open-uitleg">
+                staat dit aan, dan kan iedereen die de site vindt een vrije gastplek nemen.
+              </div>
+            </div>
+            <button class="btn" id="gast-open-btn" onclick="toggleGastOpen()">–</button>
+          </div>
+
+          <div class="plek-blok">
+            <div class="pb-kop">
+              <strong>gastplekken</strong>
+              <span class="tag" id="gast-tel">–</span>
+              <span class="spacer" style="flex:1"></span>
+              <button class="btn sm" onclick="maakPlek('gast')">＋ plek erbij</button>
+            </div>
+            <div id="gast-lijst"></div>
+          </div>
+
+          <div class="plek-blok">
+            <div class="pb-kop">
+              <strong>junior ICW-plekken</strong>
+              <span class="tag" id="icw-tel">–</span>
+              <span class="spacer" style="flex:1"></span>
+              <button class="btn sm" onclick="maakPlek('icw')">＋ plek erbij</button>
+            </div>
+            <div id="icw-lijst"></div>
+          </div>
+        </div>
+
+        <h2 class="sect">aanvragen junior ICW <span class="tag" id="aanvraag-tel" hidden></span></h2>
+        <p class="lead">wie je goedkeurt krijgt meteen een plek toegewezen. de aanvrager haalt zijn gegevens zelf op het inlogscherm op met dezelfde Smartschool-naam.</p>
+        <div id="aanvragen"></div>
 
         <h2 class="sect">inlogscherm</h2>
         <p class="lead">jij bepaalt wat er links op het inlogscherm staat. leeg laten mag ook.</p>
@@ -386,6 +619,26 @@
               <textarea id="ls-text" class="input" rows="4" maxlength="400"
                 placeholder="wat je wil dat iedereen ziet voor ze inloggen"></textarea>
 
+              <!-- de lege ruimte links op het inlogscherm -->
+              <div class="fld-label" style="margin-top:14px;">de lege ruimte links</div>
+              <div class="ls-bg" id="ls-bg">
+                <button class="ls-bg-keuze" data-bg="leeg" onclick="setLoginBg('leeg')">
+                  <span class="lb-vb lb-leeg"></span>
+                  <strong>leeg laten</strong>
+                  <span>zoals nu: alleen wat je hierboven typt</span>
+                </button>
+                <button class="ls-bg-keuze" data-bg="tekening" onclick="setLoginBg('tekening')">
+                  <span class="lb-vb lb-tekening"></span>
+                  <strong>het lokaal</strong>
+                  <span>de tekening van vandaag, live. zonder namen erbij.</span>
+                </button>
+                <button class="ls-bg-keuze" data-bg="afbeelding" onclick="setLoginBg('afbeelding')">
+                  <span class="lb-vb lb-afbeelding"></span>
+                  <strong>een afbeelding</strong>
+                  <span>de afbeelding die je hieronder kiest</span>
+                </button>
+              </div>
+
               <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
                 <button class="btn primary" onclick="saveLoginScreen()">opslaan</button>
                 <button class="btn" onclick="document.getElementById('ls-image').click()">afbeelding kiezen</button>
@@ -393,7 +646,8 @@
                 <input type="file" id="ls-image" accept="image/*" hidden />
               </div>
               <p style="font-size:11.5px;color:var(--text-faint);margin-top:9px;">
-                afbeelding max 5 MB. laat alles leeg voor een leeg scherm.
+                afbeelding max 5 MB. kies je <em>het lokaal</em>, dan ziet ook wie nog niet ingelogd is
+                wat er vandaag op het bord staat — de namen blijven binnen.
               </p>
             </div>
 
@@ -401,6 +655,7 @@
               <div class="fld-label">voorbeeld</div>
               <div class="ls-preview" id="ls-preview">
                 <div class="ls-preview-img" id="ls-preview-img" hidden></div>
+                <canvas class="ls-preview-canvas" id="ls-preview-canvas" width="400" height="225" hidden></canvas>
                 <strong id="ls-preview-title"></strong>
                 <span id="ls-preview-text"></span>
               </div>
@@ -482,6 +737,7 @@
 <div id="lightbox" onclick="this.classList.remove('on')"><img id="lightbox-img" src="" alt="" /></div>
 <div class="toast" id="toast"></div>
 
+<script src="config.js"></script>
 <script src="socket.io/socket.io.js"></script>
 <script src="app.js"></script>
 </body>

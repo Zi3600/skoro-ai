@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>drerries-ai</title>
+  <title>lokaal b16</title>
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#1a8fd4" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="drerries" />
+  <meta name="apple-mobile-web-app-title" content="lokaal b16" />
   <link rel="apple-touch-icon" href="icon-192.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
   <link rel="stylesheet" href="app.css" />
@@ -18,7 +18,8 @@
 
     #split { display: flex; min-height: 100vh; }
 
-    /* linkerkant — hier stond vroeger de eigenaar, blijft nu bewust leeg */
+    /* linkerkant — de beheerder kiest of hier niks staat, een afbeelding,
+       of het lokaal van vandaag (beheer > inlogscherm) */
     #brand {
       flex: 1;
       background: var(--panel);
@@ -39,6 +40,24 @@
       border: 2px solid var(--edge);
       box-shadow: var(--glow-lg), inset 0 1px 0 rgba(255,255,255,0.9);
       margin-bottom: 20px;
+    }
+    /* het lokaal van vandaag, live meegetekend */
+    #brand-canvas {
+      width: 100%;
+      display: block;
+      border: 2px solid var(--edge);
+      background: #fff;
+      box-shadow: var(--glow-lg), inset 0 1px 0 rgba(255,255,255,0.9);
+      margin-bottom: 12px;
+    }
+    #brand-canvas-cap {
+      font-size: 11px; color: var(--text-faint);
+      display: flex; align-items: center; gap: 6px; margin-bottom: 16px;
+    }
+    #brand-canvas-cap .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #9bf0b4, #2f9a52);
+      box-shadow: 0 0 5px rgba(60,200,110,0.8);
     }
     #brand-title {
       font-size: 21px; font-weight: 700; color: var(--heading);
@@ -67,7 +86,7 @@
       background: var(--aqua);
       border: 2px solid var(--edge);
       box-shadow: var(--glow), inset 0 1px 0 rgba(255,255,255,0.55);
-      color: #fff; font-weight: 700; font-size: 22px;
+      color: #fff; font-weight: 700; font-size: 17px;
       text-shadow: 0 1px 3px rgba(0,80,160,0.5);
       display: flex; align-items: center; justify-content: center;
       margin-bottom: 18px;
@@ -103,6 +122,44 @@
     #status { font-size: 12px; color: var(--text-muted); min-height: 20px; margin-top: 10px; }
     #status.err { color: var(--red); font-weight: 700; }
 
+    /* ---- gastplekken en ICW-aanvragen ---- */
+    .plekken {
+      margin-top: 20px; padding-top: 16px;
+      border-top: 1px solid var(--line-soft);
+    }
+    .plekken h2 {
+      font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 9px;
+    }
+    .plek {
+      display: flex; align-items: center; gap: 9px;
+      padding: 9px 11px; margin-bottom: 7px;
+      background: var(--glass-sunken);
+      border: 1px solid var(--edge-soft);
+      box-shadow: var(--gloss);
+    }
+    .plek .pk-b { flex: 1; min-width: 0; }
+    .plek .pk-b strong { display: block; font-size: 12.5px; color: var(--heading); }
+    .plek .pk-b span { display: block; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+    .plek .btn { flex-shrink: 0; }
+
+    .plek-form { margin-top: 8px; }
+    .plek-form .input { margin-bottom: 7px; }
+    .plek-form .row2 { display: flex; gap: 7px; flex-wrap: wrap; }
+    .plek-uit {
+      margin-top: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.6;
+      background: var(--glass-strong); border: 1px solid var(--edge);
+      border-left: 4px solid #1a8fd4; box-shadow: var(--gloss);
+    }
+    .plek-uit.goed { border-left-color: var(--green); }
+    .plek-uit.fout { border-left-color: var(--red); }
+    .plek-uit code {
+      font-family: var(--mono); font-size: 12px;
+      background: rgba(255,255,255,0.7); padding: 1px 5px;
+      border: 1px solid var(--line-soft);
+    }
+    html[data-theme="dark"] .plek-uit code { background: rgba(5,18,45,0.8); }
+
     .foot {
       margin-top: 26px; font-size: 11px; color: var(--text-faint);
       display: flex; gap: 14px; flex-wrap: wrap;
@@ -122,6 +179,8 @@
   <!-- wat hier staat regelt de beheerder zelf via beheer > inlogscherm -->
   <div id="brand">
     <div id="brand-inner">
+      <canvas id="brand-canvas" width="800" height="450" hidden></canvas>
+      <div id="brand-canvas-cap" hidden><span class="dot"></span><span id="brand-canvas-txt"></span></div>
       <div id="brand-image" hidden></div>
       <h2 id="brand-title" hidden></h2>
       <p id="brand-text" hidden></p>
@@ -129,9 +188,9 @@
   </div>
 
   <div id="panel">
-    <div class="mark">d</div>
-    <h1>drerries-ai</h1>
-    <p class="sub">log in voor straat, je groepen en Maes-AI.</p>
+    <div class="mark">b16</div>
+    <h1>lokaal b16</h1>
+    <p class="sub">log in voor het lokaal, je groepen en Maes-AI.</p>
 
     <div class="field">
       <label for="u">gebruikersnaam</label>
@@ -149,6 +208,47 @@
 
     <p id="status"></p>
 
+    <!-- gast- en ICW-plekken -->
+    <div class="plekken">
+      <h2>nog geen account?</h2>
+
+      <!-- gast: meteen binnen, zolang er plekken vrij zijn -->
+      <div class="plek" id="gast-plek" hidden>
+        <div class="pk-b">
+          <strong>als gast binnenspringen</strong>
+          <span id="gast-vrij">–</span>
+        </div>
+        <button class="btn sm" onclick="toonGast()">gast</button>
+      </div>
+      <div class="plek-form" id="gast-form" hidden>
+        <input id="gast-naam" class="input" maxlength="24" placeholder="je naam, zodat iedereen weet wie je bent" />
+        <div class="row2">
+          <button class="btn primary sm" onclick="gastLogin()">als gast binnen</button>
+          <button class="btn ghost sm" onclick="verbergGast()">annuleren</button>
+        </div>
+      </div>
+
+      <!-- ICW junior: aanvragen met je Smartschool-naam -->
+      <div class="plek">
+        <div class="pk-b">
+          <strong>junior ICW-plek aanvragen</strong>
+          <span id="icw-vrij">je geeft je Smartschool-naam door, wij handelen je aanvraag hier op de site af.</span>
+        </div>
+        <button class="btn sm" onclick="toonIcw()">aanvragen</button>
+      </div>
+      <div class="plek-form" id="icw-form" hidden>
+        <input id="icw-naam" class="input" maxlength="60" placeholder="je Smartschool-naam" />
+        <input id="icw-bericht" class="input" maxlength="240" placeholder="kort waarom je erbij wil (mag leeg)" />
+        <div class="row2">
+          <button class="btn primary sm" onclick="icwAanvragen()">aanvraag versturen</button>
+          <button class="btn sm" onclick="icwStatus()">status bekijken</button>
+          <button class="btn ghost sm" onclick="verbergIcw()">annuleren</button>
+        </div>
+      </div>
+
+      <div class="plek-uit" id="plek-uit" hidden></div>
+    </div>
+
     <div class="foot">
       <a href="watisdit.html">wat is dit?</a>
       <a href="policy.html">privacy</a>
@@ -156,47 +256,229 @@
   </div>
 </div>
 
+<script src="config.js"></script>
 <script>
-  const BACKEND = location.protocol === "file:" ? "https://skoro-ai.onrender.com" : location.origin;
+  // waar de backend staat, zie frontend/config.js
+  const BACKEND = window.BACKEND_URL || location.origin;
 
   if (localStorage.getItem("darkMode") === "1") document.documentElement.setAttribute("data-theme", "dark");
   if (localStorage.getItem("token")) location.replace("app.html");
 
-  const uEl = document.getElementById("u");
-  const pEl = document.getElementById("p");
-  const statusEl = document.getElementById("status");
-  const progEl = document.getElementById("login-prog");
-  const btn = document.getElementById("login-btn");
+  const $ = id => document.getElementById(id);
+  const uEl = $("u");
+  const pEl = $("p");
+  const statusEl = $("status");
+  const progEl = $("login-prog");
+  const btn = $("login-btn");
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
 
   [uEl, pEl].forEach(el => el.addEventListener("keydown", e => { if (e.key === "Enter") login(); }));
   uEl.focus();
 
-  // linkerkant wordt door de beheerder ingevuld (beheer > inlogscherm)
+  /* ------------------- de linkerkant van het scherm ------------------ */
+
   fetch(BACKEND + "/public/login-screen")
     .then(r => r.json())
     .then(d => {
-      if (d.image) {
-        const el = document.getElementById("brand-image");
+      if (d.bg === "afbeelding" && d.image) {
+        const el = $("brand-image");
         el.style.backgroundImage = `url("${d.image}")`;
         el.hidden = false;
       }
-      if (d.title) {
-        const el = document.getElementById("brand-title");
-        el.textContent = d.title;
-        el.hidden = false;
+      if (d.bg === "tekening" && d.tekening) tekenLokaal(d.tekening);
+      if (d.title) { const el = $("brand-title"); el.textContent = d.title; el.hidden = false; }
+      if (d.text)  { const el = $("brand-text");  el.textContent = d.text;  el.hidden = false; }
+    })
+    .catch(() => {});
+
+  /* Het lokaal van vandaag als achtergrond. Dit is dezelfde tekenlogica als
+     in app.js, maar dan zonder namen: wie nog niet ingelogd is ziet alleen
+     de lijnen en de teksten, niet wie ze gezet heeft. */
+
+  const BRON_W = 1600, BRON_H = 900;
+  const PRESET_STOPS = {
+    aqua: ["#a8e4f7", "#c9f0c8", "#7ecff5"],
+    lucht: ["#dff4ff", "#9fd8f6", "#5fb6e8"],
+    gras: ["#eafbe4", "#b6e8a6", "#6fc46b"],
+    zonsondergang: ["#ffe9c7", "#ffb887", "#ef7a91"],
+    nacht: ["#12305e", "#0a1c3f", "#050d1f"],
+    papier: ["#ffffff", "#f7f5ef", "#f2f0e9"],
+  };
+
+  async function tekenLokaal(t) {
+    const cv = $("brand-canvas");
+    const c = cv.getContext("2d");
+    const w = cv.width, h = cv.height;
+
+    c.fillStyle = "#ffffff";
+    c.fillRect(0, 0, w, h);
+
+    if (t.heeftEigenAchtergrond) {
+      const img = await new Promise(res => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = () => res(null);
+        i.src = BACKEND + "/public/lokaal-bg";
+      });
+      if (img) {
+        const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+        const iw = img.naturalWidth * s, ih = img.naturalHeight * s;
+        c.drawImage(img, (w - iw) / 2, (h - ih) / 2, iw, ih);
       }
-      if (d.text) {
-        const el = document.getElementById("brand-text");
-        el.textContent = d.text;
-        el.hidden = false;
+    } else if (t.bgPreset && PRESET_STOPS[t.bgPreset]) {
+      const stops = PRESET_STOPS[t.bgPreset];
+      const g = c.createLinearGradient(0, 0, w * 0.35, h);
+      stops.forEach((kleur, i) => g.addColorStop(i / (stops.length - 1), kleur));
+      c.fillStyle = g;
+      c.fillRect(0, 0, w, h);
+    }
+
+    const sx = w / BRON_W, sy = h / BRON_H;
+    for (const item of t.items || []) {
+      if (item.t === "s") {
+        if (!item.pts || !item.pts.length) continue;
+        c.strokeStyle = item.c || "#37352f";
+        c.lineWidth = Math.max((item.w || 3) * sx, 0.5);
+        c.lineCap = "round";
+        c.lineJoin = "round";
+        c.beginPath();
+        c.moveTo(item.pts[0][0] * sx, item.pts[0][1] * sy);
+        if (item.pts.length === 1) c.lineTo(item.pts[0][0] * sx + 0.1, item.pts[0][1] * sy);
+        for (let i = 1; i < item.pts.length; i++) c.lineTo(item.pts[i][0] * sx, item.pts[i][1] * sy);
+        c.stroke();
+      } else if (item.t === "x") {
+        c.fillStyle = item.c || "#37352f";
+        c.font = `600 ${(item.s || 28) * sy}px Tahoma, Verdana, sans-serif`;
+        c.textBaseline = "alphabetic";
+        c.fillText(item.text || "", item.x * sx, item.y * sy);
+      }
+    }
+
+    cv.hidden = false;
+    const n = (t.items || []).length;
+    $("brand-canvas-txt").textContent = n
+      ? `het lokaal van vandaag · ${n} ding${n === 1 ? "" : "en"} op het bord`
+      : "het lokaal van vandaag · nog leeg";
+    $("brand-canvas-cap").hidden = false;
+  }
+
+  /* --------------------- gast- en ICW-plekken ----------------------- */
+
+  let spots = { gastOpen: false, gastVrij: 0, icwVrij: 0 };
+
+  fetch(BACKEND + "/public/spots")
+    .then(r => r.json())
+    .then(d => {
+      spots = d;
+      if (d.gastOpen && d.gastVrij > 0) {
+        $("gast-plek").hidden = false;
+        $("gast-vrij").textContent =
+          `${d.gastVrij} van de ${d.gastTotaal} gastplekken ${d.gastVrij === 1 ? "is" : "zijn"} vrij. je kijkt mee, je hoeft niks te vragen.`;
+      } else if (d.gastTotaal > 0 && d.gastOpen) {
+        $("gast-plek").hidden = false;
+        $("gast-vrij").textContent = "alle gastplekken zijn op dit moment bezet.";
+      }
+      if (d.icwVrij > 0) {
+        $("icw-vrij").textContent =
+          `${d.icwVrij} plek${d.icwVrij === 1 ? "" : "ken"} vrij. je geeft je Smartschool-naam door, wij handelen je aanvraag hier op de site af.`;
       }
     })
     .catch(() => {});
+
+  function uit(html, soort) {
+    const el = $("plek-uit");
+    el.hidden = false;
+    el.className = "plek-uit" + (soort ? " " + soort : "");
+    el.innerHTML = html;
+  }
+
+  function toonGast() { $("gast-form").hidden = false; $("gast-naam").focus(); }
+  function verbergGast() { $("gast-form").hidden = true; }
+  function toonIcw() { $("icw-form").hidden = false; $("icw-naam").focus(); }
+  function verbergIcw() { $("icw-form").hidden = true; }
+
+  async function gastLogin() {
+    const displayName = $("gast-naam").value.trim();
+    if (displayName.length < 2) { uit("vul een naam in waaraan iedereen je herkent.", "fout"); return; }
+    try {
+      const res = await fetch(BACKEND + "/public/guest-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.success) { uit(esc(d.error || "dat lukte niet"), "fout"); return; }
+      bewaarSessie(d);
+      location.replace("app.html");
+    } catch (e) {
+      uit("geen verbinding met de server.", "fout");
+    }
+  }
+
+  async function icwAanvragen() {
+    const smartschool = $("icw-naam").value.trim();
+    if (smartschool.length < 3) { uit("vul je Smartschool-naam in.", "fout"); return; }
+    try {
+      const res = await fetch(BACKEND + "/public/junior-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ smartschool, bericht: $("icw-bericht").value.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) { uit(esc(d.error || "dat lukte niet"), "fout"); return; }
+      if (d.alGevraagd) {
+        uit("je hebt al een aanvraag lopen. klik op <strong>status bekijken</strong> om te zien hoe ver ze staat.");
+      } else {
+        uit("je aanvraag staat genoteerd. de beheerder handelt ze hier af — kom later terug en klik op <strong>status bekijken</strong> met dezelfde naam.", "goed");
+      }
+    } catch (e) {
+      uit("geen verbinding met de server.", "fout");
+    }
+  }
+
+  async function icwStatus() {
+    const naam = $("icw-naam").value.trim();
+    if (naam.length < 3) { uit("vul de Smartschool-naam in waarmee je de aanvraag deed.", "fout"); return; }
+    try {
+      const res = await fetch(BACKEND + "/public/junior-request?naam=" + encodeURIComponent(naam));
+      const d = await res.json();
+      if (!res.ok) { uit(esc(d.error || "geen aanvraag gevonden"), "fout"); return; }
+
+      if (d.status === "goedgekeurd") {
+        uit(`je bent erbij. log in met <code>${esc(d.username)}</code> en wachtwoord <code>${esc(d.password)}</code>.
+             verander je wachtwoord niet zelf — dat regelt de beheerder.`, "goed");
+        uEl.value = d.username;
+        pEl.value = d.password;
+      } else if (d.status === "geweigerd" || d.status === "ingetrokken") {
+        uit(d.status === "geweigerd"
+          ? "je aanvraag is geweigerd." + (d.reden ? " reden: " + esc(d.reden) : "")
+          : esc(d.reden), "fout");
+      } else {
+        uit("je aanvraag staat nog open. de beheerder heeft ze nog niet behandeld.");
+      }
+    } catch (e) {
+      uit("geen verbinding met de server.", "fout");
+    }
+  }
+
+  /* ----------------------------- inloggen --------------------------- */
 
   function step(pct, msg, isErr) {
     progEl.style.width = pct + "%";
     statusEl.textContent = msg || "";
     statusEl.classList.toggle("err", !!isErr);
+  }
+
+  function bewaarSessie(data) {
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("username", data.username);
+    localStorage.setItem("displayName", data.displayName || data.username);
+    localStorage.setItem("isAdmin", data.isAdmin ? "1" : "0");
+    localStorage.setItem("role", data.role || "student");
   }
 
   async function login() {
@@ -230,10 +512,7 @@
     }
 
     step(90, "account laden...");
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("username", data.username);
-    localStorage.setItem("displayName", data.displayName || data.username);
-    localStorage.setItem("isAdmin", data.isAdmin ? "1" : "0");
+    bewaarSessie(data);
     step(100, "welkom " + (data.displayName || data.username));
     setTimeout(() => location.replace("app.html"), 300);
   }
