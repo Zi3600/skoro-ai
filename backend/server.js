@@ -198,7 +198,10 @@ const DownloadSchema = new mongoose.Schema({
   versie: { type: String, default: "" },
   mime: { type: String, default: "application/octet-stream" },
   grootte: { type: Number, default: 0 },
-  stored: String,                            // het id in GridFS
+  stored: String,                            // het id in GridFS, als het bestand hier staat
+  // Of het bestand staat ergens anders en wij sturen alleen door. Dat scheelt
+  // bandbreedte: zie de uitleg bij de route hieronder.
+  url: { type: String, default: "" },
   uploader: String,
   uploadedAt: { type: Number, default: () => Date.now() },
   keer: { type: Number, default: 0 },        // hoe vaak gedownload
@@ -1510,6 +1513,9 @@ function downloadPubliek(d) {
     grootte: d.grootte,
     uploadedAt: d.uploadedAt,
     keer: d.keer,
+    // waar de bytes vandaan komen; de link zelf gaat niet mee, die krijg je
+    // pas als je op downloaden klikt
+    extern: !!d.url,
   };
 }
 
@@ -1524,6 +1530,24 @@ app.get("/downloads", requireAuth, async (req, res) => {
   }
 });
 
+/* Waar de bytes vandaan komen, en waarom dat uitmaakt.
+
+   Een build van MaasAI is bijna 80 MB. Het Hobby-plan van Render geeft 5 GB
+   uitgaand verkeer per maand, en wie daaroverheen gaat zonder betaalmiddel
+   krijgt zijn services stilgelegd tot de eerste van de volgende maand. Niet
+   alleen de download: de hele site. Zestig keer downloaden en het lokaal ligt
+   plat.
+
+   Vandaar deze constructie. Staat er een url bij, dan sturen we de browser
+   daarheen en gaan de bytes buiten Render om; wij betalen alleen de paar
+   honderd bytes van de omleiding. Staat er geen url, dan streamen we het
+   bestand gewoon uit GridFS zoals eerst — voor iets kleins is dat prima.
+
+   Wat de login dan nog waard is: hij bepaalt wie de link krijgt, niet wie het
+   bestand kan ophalen. Wie ingelogd is kan de link doorgeven. Voor een
+   programma dat je sowieso aan je klas uitdeelt is dat de juiste ruil; voor
+   iets vertrouwelijks zou je de bytes door de server moeten blijven trekken. */
+
 /* Het bestand zelf. De token mag hier ook in de query, want een download is
    een gewone navigatie van de browser en die stuurt geen x-auth-token mee.
    Zelfde afweging als bij /files/:id hierboven. */
@@ -1532,7 +1556,15 @@ app.get("/downloads/:sleutel/bestand", async (req, res) => {
   if (!token || !tokens[token]) return res.status(401).send("niet ingelogd");
 
   const d = await Download.findOne({ sleutel: req.params.sleutel });
-  if (!d || !d.stored) return res.status(404).send("er staat hier niets klaar");
+  if (!d || (!d.stored && !d.url)) return res.status(404).send("er staat hier niets klaar");
+
+  // staat het bestand elders, dan is de login hierboven het hele werk dat wij
+  // doen: verder sturen we alleen door
+  if (d.url) {
+    Download.updateOne({ sleutel: d.sleutel }, { $inc: { keer: 1 } }).catch(() => {});
+    return res.redirect(302, d.url);
+  }
+
   if (!bucket) return res.status(503).send("opslag nog niet klaar");
 
   res.setHeader("Content-Type", d.mime || "application/octet-stream");
@@ -1604,6 +1636,10 @@ app.post("/downloads/:sleutel", requireAdmin, (req, res) => {
           mime: req.file.mimetype || "application/octet-stream",
           grootte: req.file.size,
           stored: String(id),
+          // stond er een link, dan is die nu niet meer waar: het bestand staat
+          // hier. Laten staan zou betekenen dat de omleiding wint en deze
+          // upload nooit iemand bereikt.
+          url: "",
           uploader: req.username,
           uploadedAt: Date.now(),
           keer: 0,
@@ -1621,6 +1657,63 @@ app.post("/downloads/:sleutel", requireAdmin, (req, res) => {
       res.status(500).json({ error: e.message });
     }
   });
+});
+
+
+/* Een link neerzetten in plaats van een bestand. Alleen de beheerder.
+
+   De grootte halen we zelf op met een HEAD, zodat het scherm "76 MB" kan tonen
+   zonder dat iemand dat met de hand moet intikken en zonder dat wij het bestand
+   binnentrekken. Lukt dat niet, dan mag het: dan staat er gewoon geen grootte
+   bij. Een link weigeren omdat een HEAD faalt zou erger zijn dan het gemis. */
+app.post("/downloads/:sleutel/link", requireAdmin, async (req, res) => {
+  const url = String(req.body.url || "").trim();
+  if (!/^https:\/\//i.test(url)) {
+    return res.status(400).json({ error: "de link moet met https:// beginnen" });
+  }
+
+  try {
+    let grootte = 0;
+    try {
+      const head = await fetch(url, { method: "HEAD", redirect: "follow" });
+      if (!head.ok) return res.status(400).json({ error: "die link geeft " + head.status });
+      grootte = Number(head.headers.get("content-length")) || 0;
+    } catch (e) {
+      return res.status(400).json({ error: "die link is niet bereikbaar: " + e.message });
+    }
+
+    const oud = await Download.findOne({ sleutel: req.params.sleutel });
+    // stond het bestand hier nog, dan mag het weg: het komt nu van elders en
+    // anders blijft het onze opslag bezet houden
+    if (oud && oud.stored) await deleteFromGridFS(oud.stored);
+
+    const doc = await Download.findOneAndUpdate(
+      { sleutel: req.params.sleutel },
+      {
+        sleutel: req.params.sleutel,
+        titel: req.body.titel || (oud && oud.titel) || req.params.sleutel,
+        omschrijving: req.body.omschrijving || (oud ? oud.omschrijving : ""),
+        bestandsnaam: req.body.bestandsnaam || url.split("/").pop() || "download",
+        versie: req.body.versie || "",
+        mime: "application/octet-stream",
+        grootte,
+        stored: "",
+        url,
+        uploader: req.username,
+        uploadedAt: Date.now(),
+        keer: 0,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    await recalcStorage();
+    console.log('download "' + doc.sleutel + '" wijst nu naar ' + url
+      + " (" + (grootte / 1048576).toFixed(1) + " MB), gezet door " + req.username);
+    res.json({ success: true, download: downloadPubliek(doc) });
+  } catch (e) {
+    console.error("download link:", e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete("/downloads/:sleutel", requireAdmin, async (req, res) => {

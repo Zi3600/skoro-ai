@@ -2577,7 +2577,10 @@ async function openDownloads() {
     const stukken = [leesbaar(d.grootte)];
     if (d.versie) stukken.push("versie " + d.versie);
     if (d.uploadedAt) stukken.push(new Date(d.uploadedAt).toLocaleDateString("nl-BE"));
-    if (d.keer) stukken.push(d.keer + (d.keer === 1 ? " keer" : " keer") + " gedownload");
+    if (d.keer) stukken.push(d.keer + " keer gedownload");
+    // de beheerder mag zien of het van de site zelf komt of van elders; voor de
+    // rest maakt het niets uit, dus die hoeft het ook niet te weten
+    if (me.isAdmin) stukken.push(d.extern ? "via een link" : "uit de opslag van de site");
     meta.textContent = stukken.join(" · ");
     knop.hidden = false;
     uitleg.hidden = false;
@@ -2643,4 +2646,26 @@ function zetDownloadNeer(input) {
   };
 
   xhr.send(fd);
+}
+
+// een link neerzetten in plaats van het bestand; scheelt de site bandbreedte
+async function zetLinkNeer() {
+  const veld = $("dl-url");
+  const status = $("dl-url-status");
+  const url = veld.value.trim();
+  if (!url) { status.textContent = "vul eerst een link in"; return; }
+
+  status.textContent = "link nakijken…";
+  try {
+    const data = await api("/downloads/maasai/link", {
+      json: { url, titel: "MaasAI voor Windows", bestandsnaam: "MaasAI.exe" },
+    });
+    status.textContent = "";
+    veld.value = "";
+    toast("de link staat klaar" + (data.download && data.download.grootte
+      ? " (" + leesbaar(data.download.grootte) + ")" : ""));
+    openDownloads();
+  } catch (err) {
+    status.textContent = err.message;
+  }
 }

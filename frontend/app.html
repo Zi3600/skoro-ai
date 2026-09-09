@@ -529,10 +529,27 @@
         <!-- alleen de beheerder zet hier een nieuwe build neer -->
         <div id="dl-beheer" hidden>
           <h2 class="sect">nieuwe versie neerzetten</h2>
+
           <div class="card">
+            <div style="font-weight:500;margin-bottom:4px;">een link (aanbevolen)</div>
             <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">
-              kies de <b>MaasAI.exe</b> uit <code>dist\</code>. de vorige versie wordt vervangen en meteen
-              uit de opslag gegooid, zodat er nooit twee builds tegelijk staan.
+              wijs naar een GitHub-release. de browser haalt het bestand daar op, niet hier, en dat
+              scheelt de site bijna al zijn bandbreedte: het Hobby-plan van Render geeft 5 GB per
+              maand en één build is bijna 80 MB. de grootte lezen we zelf uit de link.
+            </p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+              <input type="url" id="dl-url" placeholder="https://github.com/…/MaasAI.exe"
+                     style="flex:1;min-width:220px;" />
+              <button class="btn" onclick="zetLinkNeer()">link opslaan</button>
+            </div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:8px;" id="dl-url-status"></div>
+          </div>
+
+          <div class="card" style="margin-top:12px;">
+            <div style="font-weight:500;margin-bottom:4px;">of het bestand hier neerzetten</div>
+            <p style="font-size:13px;color:var(--text-muted);margin:0 0 12px;">
+              dan staat het in de database van de site en gaat elke download van de bandbreedte af.
+              de vorige versie wordt vervangen en meteen opgeruimd.
             </p>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
               <button class="btn" onclick="document.getElementById('dl-input').click()">bestand kiezen</button>
